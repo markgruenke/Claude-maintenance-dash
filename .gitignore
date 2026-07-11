@@ -1,0 +1,3 @@
+data/
+node_modules/
+scripts/email-poller.config.json

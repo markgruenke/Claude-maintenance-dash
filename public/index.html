@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maintenance Dashboard</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <h1>Maintenance Dashboard</h1>
+    <span class="sub" id="sub-line"></span>
+    <div class="actions">
+      <button id="btn-log-work" class="primary">Log work</button>
+      <button id="btn-new-order">New work order</button>
+      <button id="btn-add-part">Add part</button>
+    </div>
+  </header>
+
+  <!-- One filter row scopes everything below it -->
+  <div class="filters">
+    <span class="label">Range</span>
+    <div class="seg" id="range-seg">
+      <button data-days="7">7 days</button>
+      <button data-days="30" class="on">30 days</button>
+      <button data-days="90">90 days</button>
+      <button data-days="">All time</button>
+    </div>
+    <span class="label">Machine</span>
+    <select id="f-machine"><option value="">All machines</option></select>
+    <span class="label">Technician</span>
+    <select id="f-tech"><option value="">Everyone</option></select>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="flags" id="flags"></div>
+
+  <div class="grid2">
+    <div class="card" id="card-hours">
+      <h2>Hours by machine
+        <span class="spacer"></span>
+        <button class="ghost btn-table" data-card="card-hours">Table</button>
+      </h2>
+      <p class="desc">Logged maintenance time in the selected range</p>
+      <div class="chart" id="chart-hours"></div>
+      <div class="chart-table table-scroll" id="table-hours"></div>
+    </div>
+    <div class="card" id="card-breakdowns">
+      <h2>Work orders by machine
+        <span class="spacer"></span>
+        <button class="ghost btn-table" data-card="card-breakdowns">Table</button>
+      </h2>
+      <p class="desc">Which machines break down the most</p>
+      <div class="chart" id="chart-breakdowns"></div>
+      <div class="chart-table table-scroll" id="table-breakdowns"></div>
+    </div>
+  </div>
+
+  <div class="card" id="card-trend" style="margin-bottom:12px">
+    <h2>Work orders per week
+      <span class="spacer"></span>
+      <button class="ghost btn-table" data-card="card-trend">Table</button>
+    </h2>
+    <p class="desc">New orders opened each week</p>
+    <div class="chart" id="chart-trend"></div>
+    <div class="chart-table table-scroll" id="table-trend"></div>
+  </div>
+
+  <div class="card" style="margin-bottom:12px">
+    <h2>Open work orders</h2>
+    <p class="desc">Everything not yet completed — change status right here</p>
+    <div class="table-scroll" id="orders-table"></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>Parts</h2>
+      <p class="desc">Needed, on order, received, installed</p>
+      <div class="table-scroll" id="parts-table"></div>
+    </div>
+    <div class="card">
+      <h2>Recent work log</h2>
+      <p class="desc">Time entries in the selected range</p>
+      <div class="table-scroll" id="logs-table"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Log work modal: paste notes -> preview -> confirm -->
+<div class="modal-back" id="modal-log">
+  <div class="modal">
+    <h3>Log work from notes</h3>
+    <p class="desc">Paste your chat notes. The parser pulls out the machine, time spent,
+      parts used and parts needed — check the preview and fix anything before saving.</p>
+    <label class="fld">Notes
+      <textarea id="log-text" placeholder="Example: Spent 2 hrs on CNC 3, replaced the spindle belt. Still need to order a coolant pump. Back up and running."></textarea>
+    </label>
+    <label class="fld">Technician <input id="log-tech" placeholder="Your name"></label>
+    <label class="fld">Date <input type="date" id="log-date"></label>
+    <div class="row-end">
+      <button id="log-preview-btn">Preview</button>
+    </div>
+    <div id="log-preview"></div>
+    <div class="row-end">
+      <button class="ghost" data-close>Cancel</button>
+      <button class="primary" id="log-save-btn" disabled>Save entry</button>
+    </div>
+  </div>
+</div>
+
+<!-- New order modal: manual or paste an email -->
+<div class="modal-back" id="modal-order">
+  <div class="modal">
+    <h3>New work order</h3>
+    <div class="tabs">
+      <button id="tab-manual" class="on">Manual</button>
+      <button id="tab-email">Paste email</button>
+    </div>
+    <div id="order-manual">
+      <label class="fld">Title <input id="wo-title" placeholder="What's wrong"></label>
+      <label class="fld">Machine <input id="wo-machine" list="machine-list" placeholder="e.g. CNC 3"></label>
+      <label class="fld">Order # (from Plex, optional) <input id="wo-number"></label>
+      <label class="fld">Priority
+        <select id="wo-priority">
+          <option>low</option><option selected>medium</option><option>high</option><option>urgent</option>
+        </select>
+      </label>
+      <label class="fld">Description <textarea id="wo-desc" style="min-height:70px"></textarea></label>
+    </div>
+    <div id="order-email" style="display:none">
+      <p class="desc">Paste the subject and body of a Plex work-order email — the parser
+        pulls out the order number, machine and priority. (Set up auto-forwarding later
+        so this happens without pasting: see the README.)</p>
+      <label class="fld">Subject <input id="em-subject"></label>
+      <label class="fld">Body <textarea id="em-body"></textarea></label>
+    </div>
+    <div class="row-end">
+      <button class="ghost" data-close>Cancel</button>
+      <button class="primary" id="order-save-btn">Create order</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add part modal -->
+<div class="modal-back" id="modal-part">
+  <div class="modal">
+    <h3>Add part</h3>
+    <label class="fld">Part name <input id="pt-name" placeholder="e.g. spindle belt"></label>
+    <label class="fld">Part # (optional) <input id="pt-number"></label>
+    <label class="fld">Quantity <input type="number" id="pt-qty" value="1" min="1"></label>
+    <label class="fld">Machine <input id="pt-machine" list="machine-list"></label>
+    <label class="fld">Status
+      <select id="pt-status">
+        <option selected>needed</option><option>ordered</option><option>received</option><option>installed</option>
+      </select>
+    </label>
+    <div class="row-end">
+      <button class="ghost" data-close>Cancel</button>
+      <button class="primary" id="part-save-btn">Add part</button>
+    </div>
+  </div>
+</div>
+
+<datalist id="machine-list"></datalist>
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

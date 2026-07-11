@@ -1,0 +1,12 @@
+{
+  "host": "imap.yourmailserver.com",
+  "port": 993,
+  "secure": true,
+  "user": "you@company.com",
+  "password": "app-password-here",
+  "mailbox": "INBOX",
+  "subjectFilter": "work order",
+  "dashboardUrl": "http://localhost:3000",
+  "ingestToken": "",
+  "pollSeconds": 120
+}

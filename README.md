@@ -28,11 +28,12 @@ node scripts/seed.js --clear  # start fresh for real use
 Runs anywhere Node ≥ 18 runs — a spare PC in the shop, a Raspberry Pi, a
 work laptop. `PORT=8080 node server.js` to change the port.
 
-**Running it always-on on a Windows shop computer?** Double-click
-`start-dashboard.bat` to run it, or right-click `install-autostart.bat` ▸ Run
-as administrator to have it start on every boot and stay up on its own. Full
-walkthrough (including viewing it from other shop PCs and backing up your data)
-in [docs/windows-setup.md](docs/windows-setup.md).
+**Running it always-on on a Windows shop computer?** Run
+`create-desktop-icon.bat` once to get a double-click **Maintenance Dashboard**
+icon on the desktop (it starts the server and opens the browser). To also have
+it come back after a reboot on its own, right-click `install-autostart.bat` ▸
+Run as administrator. Full walkthrough (including viewing it from other shop
+PCs and backing up your data) in [docs/windows-setup.md](docs/windows-setup.md).
 
 ## What it does
 

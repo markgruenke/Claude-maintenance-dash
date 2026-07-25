@@ -38,10 +38,21 @@ Open Command Prompt in the folder and run `node scripts\seed.js`, then refresh.
 When you're ready to track *real* work, wipe the demo data with
 `node scripts\seed.js --clear`.
 
-Closing the black window stops the dashboard. That's fine for testing — step 4
-makes it run on its own.
+Closing the black window stops the dashboard. That's fine for testing — the
+next steps make it easy to open and keep it running on its own.
 
-## 4. Make it start automatically and stay running
+## 4. Put an icon on the desktop
+
+Double-click **`create-desktop-icon.bat`** once. It drops a **Maintenance
+Dashboard** icon on the desktop. From then on, just **double-click that icon**
+to open the dashboard — it starts the server if it isn't already running and
+opens your browser to it. No admin rights needed, and it never launches a
+second copy.
+
+That icon is all most people need day to day. Step 5 is only if you also want
+it to come back automatically after a reboot with nobody logging in.
+
+## 5. (Optional) Make it start automatically after every reboot
 
 Right-click **`install-autostart.bat`** and choose **Run as administrator**.
 That does three things:
@@ -56,7 +67,7 @@ it stays up on its own.
 To undo all of that later, right-click **`uninstall-autostart.bat`** ▸ Run as
 administrator. Your data is never touched.
 
-## 5. View it from other shop computers
+## 6. View it from other shop computers
 
 On the shop PC, open Command Prompt and run `ipconfig`. Note the **IPv4
 Address** (something like `192.168.1.50`). From any other computer on the shop

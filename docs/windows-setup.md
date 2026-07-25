@@ -4,12 +4,17 @@ Goal: the dashboard runs by itself on one shop PC, starts back up whenever
 that PC reboots, and any computer on the shop network can open it in a
 browser. Do this once on the shop computer.
 
-## 1. Install Node.js (one time)
+## 1. Get Node.js (one time)
 
 Download the **LTS** installer from <https://nodejs.org> and run it with the
 default options. That's the only thing this app needs — no database, no other
 software. Verify it worked: open **Command Prompt** and type `node --version`
 — you should see a version number.
+
+> **No admin rights on the work PC?** You don't have to install anything — Node
+> also comes as a plain ZIP you unzip into a `node` folder next to the scripts,
+> and the launcher finds it automatically. See
+> [no-admin-node.md](no-admin-node.md).
 
 ## 2. Get the files onto the shop PC (one time)
 

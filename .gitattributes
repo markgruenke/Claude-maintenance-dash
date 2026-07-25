@@ -1,6 +1,9 @@
-# Windows batch files must use CRLF line endings to run reliably.
-*.bat text eol=crlf
-*.cmd text eol=crlf
+# Windows batch files must keep CRLF line endings to run reliably. Mark them
+# as non-text so git stores the CRLF bytes verbatim — this way a GitHub
+# "Download ZIP" (which ignores eol conversion) still delivers CRLF, not LF.
+# (LF-ended .bat files fail on Windows with "X was unexpected at this time".)
+*.bat -text
+*.cmd -text
 
 # Binary assets — never touch line endings.
 *.ico binary

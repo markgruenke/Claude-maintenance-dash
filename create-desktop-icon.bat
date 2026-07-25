@@ -9,15 +9,7 @@ cd /d "%~dp0"
 set "ICON=%~dp0dashboard.ico"
 if not exist "%ICON%" set "ICON=%SystemRoot%\System32\shell32.dll,21"
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$desktop=[Environment]::GetFolderPath('Desktop');" ^
-  "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($desktop+'\Maintenance Dashboard.lnk');" ^
-  "$s.TargetPath='%~dp0open-dashboard.bat';" ^
-  "$s.WorkingDirectory='%~dp0';" ^
-  "$s.IconLocation='%ICON%';" ^
-  "$s.Description='Open the Maintenance Dashboard';" ^
-  "$s.WindowStyle=7;" ^
-  "$s.Save()"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$d=[Environment]::GetFolderPath('Desktop'); $s=(New-Object -ComObject WScript.Shell).CreateShortcut($d+'\Maintenance Dashboard.lnk'); $s.TargetPath='%~dp0open-dashboard.bat'; $s.WorkingDirectory='%~dp0'; $s.IconLocation='%ICON%'; $s.Description='Open the Maintenance Dashboard'; $s.WindowStyle=7; $s.Save()"
 
 if errorlevel 1 (
   echo.

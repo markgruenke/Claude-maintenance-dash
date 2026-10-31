@@ -116,25 +116,69 @@ test('techs can only edit their own entries', async () => {
   assert.equal((await sup('PATCH', '/api/work-logs/' + mine.data.log.id, { entered: true })).data.entered, true);
 });
 
-test('job timer: start, stop computes minutes, stop twice is harmless', async () => {
-  const s = await tech('POST', '/api/work-logs/start', { clientId: 't-1', machineName: 'Conveyor A', newOrderTitle: 'Belt tracking', date: '2026-11-01' });
-  assert.equal(s.data.log.running, true);
-  assert.equal(s.data.workOrder.status, 'in_progress');
-  const stop = await tech('POST', `/api/work-logs/${s.data.log.id}/stop`, { notes: 'Adjusted tracking', statusAfter: 'completed' });
-  assert.equal(stop.data.log.running, false);
-  assert.ok(stop.data.log.minutes >= 1);
-  assert.equal(stop.data.workOrder.status, 'completed');
-  const again = await tech('POST', `/api/work-logs/${s.data.log.id}/stop`, {});
-  assert.equal(again.data.alreadyStopped, true);
+test('voice entry: one sentence becomes a logged entry; resends are ignored; undo leaves no trace', async () => {
+  const say = { text: 'Press two, replaced the drive belt, about an hour and a half, still need to order a belt guard',
+    date: '2026-11-01', clientId: 'v-1', source: 'voice' };
+  const r = await tech('POST', '/api/ingest/notes', say);
+  assert.equal(r.status, 201);
+  assert.equal(r.data.log.minutes, 90);
+  assert.equal(r.data.log.source, 'voice');
+  assert.equal(r.data.workOrder.status, 'waiting_parts');
+  assert.deepEqual(r.data.partsNeeded.map((p) => p.name), ['belt guard']);
+  assert.deepEqual(r.data.partsUsed.map((p) => p.name), ['drive belt']);
+  assert.equal((await tech('POST', '/api/ingest/notes', say)).data.duplicate, true);
+
+  // A one-off with no "still"/"need" is treated as done, not left open.
+  const oneOff = await tech('POST', '/api/ingest/notes', { text: 'Swapped the photo eye on robot cell 2, 20 minutes', date: '2026-11-01', clientId: 'v-2' });
+  assert.equal(oneOff.data.workOrder.status, 'completed');
+  assert.equal(oneOff.data.log.minutes, 20);
+
+  // Follow-up about the same problem joins that job; unrelated work doesn't.
+  const follow = await tech('POST', '/api/ingest/notes', { text: 'Press 2 belt guard came in, installed it, all good', date: '2026-11-01', clientId: 'v-4' });
+  assert.equal(follow.data.workOrder.id, r.data.workOrder.id);
+  assert.equal(follow.data.workOrder.status, 'completed');
+  const other = await tech('POST', '/api/ingest/notes', { text: 'Press 2 hydraulic hose leaking, tightened fitting', date: '2026-11-01', clientId: 'v-5' });
+  assert.notEqual(other.data.workOrder.id, r.data.workOrder.id);
+
+  // Undo: deleting the entry removes its parts and the job it opened.
+  await tech('DELETE', '/api/work-logs/' + oneOff.data.log.id);
+  const orders = (await sup('GET', '/api/work-orders')).data;
+  assert.equal(orders.some((w) => w.id === oneOff.data.workOrder.id), false);
+
+  // No time said: still logged, just with no minutes.
+  const noTime = await tech('POST', '/api/ingest/notes', { text: 'cleaned up around the shop', date: '2026-11-01', clientId: 'v-3' });
+  assert.equal(noTime.data.log.minutes, 0);
+  assert.equal(noTime.data.workOrder, null);
+});
+
+test('spoken phrasing: times, machine names and status', () => {
+  const { parseNotes, extractMinutes } = require('../lib/parser');
+  assert.equal(extractMinutes('took about forty-five minutes'), 45);
+  assert.equal(extractMinutes('an hour and a half'), 90);
+  assert.equal(extractMinutes('two and a half hours'), 150);
+  assert.equal(extractMinutes('half an hour'), 30);
+  assert.equal(extractMinutes('a couple hours'), 120);
+  assert.equal(extractMinutes('2 hours and 15 minutes'), 135);
+  assert.equal(extractMinutes('1.5 hrs'), 90);
+  assert.equal(extractMinutes('checked press 2'), null);
+  const known = ['CNC 3', 'Press 2', 'Conveyor A'];
+  assert.equal(parseNotes('cnc3 coolant pump fixed', known).machineName, 'CNC 3');
+  assert.equal(parseNotes('greased conveyor a', known).machineName, 'Conveyor A');
+  assert.equal(parseNotes('looked at press four', known).machineName, 'Press 4');
+  assert.equal(parseNotes('press 2 not fixed yet, coming back tomorrow', known).statusHint, 'in_progress');
+  assert.equal(parseNotes('press 2 back up and running', known).statusHint, 'completed');
+  assert.equal(parseNotes('press 2 waiting on parts to come in', known).statusHint, 'waiting_parts');
+  assert.equal(parseNotes('work order 10288 on press 2', known).orderNumber, '10288');
+  assert.deepEqual(parseNotes('replaced the belt and tested it', known).partsUsed, ['belt']);
 });
 
 test('weekend report buckets work and parts correctly', async () => {
   const r = (await sup('GET', '/api/reports?from=2026-10-30&to=2026-11-01&tz=UTC')).data;
-  assert.equal(r.totals.entries, 5);
+  assert.equal(r.totals.entries, 8);
   assert.ok(r.workedOpen.some((o) => o.title === 'Coolant pump' && o.status === 'waiting_parts'));
   assert.ok(r.partsNeeded.some((p) => p.name === 'coolant pump'));
   assert.match(r.handoffText, /STILL OPEN — WORKED ON THIS PERIOD/);
-  assert.match(r.dailyText, /WO#10301 — CNC 3 — 1 h/);
+  assert.match(r.dailyText, /— CNC 3 — 1 h — WO#10301/);
   const daveOnly = (await sup('GET', '/api/reports?from=2026-10-30&to=2026-11-01&technician=Dave&tz=UTC')).data;
   assert.ok(daveOnly.entries.every((e) => e.technician === 'Dave'));
 

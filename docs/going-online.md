@@ -12,6 +12,11 @@ anywhere, by everyone.
 3. On the tablet, open `http://192.168.1.50:3000` and sign in.
 4. Use the browser's **Add to Home Screen** so it opens like an app.
 
+On this plain `http://` address the browser blocks the app's own speech
+recognition, so the big mic button hands off to your keyboard's microphone key
+(tap the box, tap the keyboard 🎤, talk, tap Save). With HTTPS (Stage 3) the
+big button listens directly.
+
 If the Wi-Fi drops while you're logging work, the entry is kept on the tablet
 and sent automatically when the connection is back (a yellow bar shows how many
 are waiting).
@@ -58,6 +63,8 @@ Set these environment variables wherever the server runs:
 
 And:
 
+- HTTPS also unlocks the one-tap mic button on the tablet (browsers only
+  allow speech recognition on secure pages).
 - **Never expose plain `http://` to the internet.** Options B and C both give
   you HTTPS. Without it, PINs cross the network readable.
 - Supervisor password: 8+ characters (enforced). Give technicians **6+ digit

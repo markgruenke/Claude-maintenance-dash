@@ -39,7 +39,7 @@ Want to look around first? Close the server, run `node scripts/seed.js`
 
 | Screen | What it's for |
 |---|---|
-| **Today** (tablet) | Big **Log work** / **Start job timer** / **Paste notes** buttons; running timers; today's entries with an **Entered** checkbox; your open work orders |
+| **Today** (tablet) | One big **microphone** button: say what you did, it's logged. Today's entries (time of day, machine, time spent, status, parts) with an **Entered** checkbox |
 | **Work Orders** | Every order with filters (open / in progress / waiting parts / overdue / completed), search, and a detail view to edit everything, add parts and notes, see full history |
 | **Parts** | Need to order → on order → received → installed. **Copy order list** for purchasing |
 | **Reports** | *Work list* (end of day) and *Handoff report* for Today, Yesterday, Fri–Sun, Sat–Sun, last 7 days or any dates, for everyone or one person |
@@ -49,13 +49,42 @@ Want to look around first? Close the server, run `node scripts/seed.js`
 
 ### Logging work (the tablet flow)
 
-1. **Log work** → pick the machine (recent ones are one tap) → pick its open
-   job or **+ New job** → say what you did (the keyboard mic works for
-   dictation) → tap a time (15m … 4h) → **Still working / Waiting on parts /
-   Fixed** → parts used / needed (`belt, 2x bearing`) → Save.
-2. Or **Start job timer** when you begin, then **Stop & log** when done; time
-   is filled in for you.
-3. Work orders, statuses and the parts list update themselves from what you log.
+Tap the mic and talk, the way you'd tell a coworker:
+
+> "Press two, replaced the drive belt, about an hour and a half, still need
+> to order a belt guard."
+
+Tap again (or just stop talking) and it's saved: **Press 2 · 1.5 h · waiting
+on parts**, with *drive belt* used and *belt guard* added to the parts list.
+**Undo** is on the confirmation if it misheard; **Edit** fixes any entry later.
+
+What it picks up from what you say (all optional):
+- **Machine**: names it already knows ("CNC three", "cnc3" → CNC 3), or
+  things like "press 4", "line 3", "robot cell 2" (added automatically).
+- **Time spent**: "45 minutes", "an hour and a half", "a couple hours". No
+  time said is fine; the entry just has no duration.
+- **Company WO#**: "work order 10288", only if you say one.
+- **Parts**: "replaced / installed / swapped the …" = used; "need to order /
+  need a / waiting on …" = needed.
+- **Status**: "still / not fixed / coming back" = open; "need to order" =
+  waiting on parts; otherwise it counts as done.
+
+Behind the scenes each entry is attached to a job: the WO# you said, an open
+job on that machine about the same thing ("hydraulic", "coolant"…), or a new
+job made for it. You never fill in work-order forms; the jobs are what feed the
+"still open" and "parts" parts of the weekend report.
+
+**About the mic button:** browsers only allow speech recognition on a secure
+(`https://`) page or on the PC itself (`localhost`). On the shop Wi-Fi address
+(`http://192.168…`) the big button falls back to your **keyboard's
+microphone key**, which works anywhere: tap the box, tap the keyboard 🎤, talk,
+tap Save. Once it's online with HTTPS ([docs/going-online.md](docs/going-online.md)),
+the big button works directly. Chrome's built-in recognition sends audio to
+Google to transcribe, so it needs internet; the keyboard mic depends on the
+keyboard's own settings.
+
+**Detailed entry** (all fields as a form) and **Paste notes** are still there
+for when you want them.
 
 ### People and roles
 
@@ -102,15 +131,14 @@ docs/                Windows setup, no-admin Node, email, going online
 |---|---|
 | `GET /api/auth/status`, `POST /api/auth/setup|login|logout` | accounts |
 | `GET /api/bootstrap` | machines, people, enums for the UI |
-| `GET/POST /api/work-logs`, `PATCH/DELETE /api/work-logs/:id` | work entries (POST finds/creates the order, files parts, moves status) |
-| `POST /api/work-logs/start`, `POST /api/work-logs/:id/stop` | job timer |
+| `GET/POST /api/work-logs`, `PATCH/DELETE /api/work-logs/:id` | work entries (DELETE also removes parts and a job the entry created) |
 | `GET/POST /api/work-orders`, `GET/PATCH/DELETE /api/work-orders/:id`, `POST …/:id/notes` | work orders |
 | `GET/POST /api/parts`, `PATCH/DELETE /api/parts/:id` | parts |
 | `GET/POST /api/pm`, `PATCH/DELETE /api/pm/:id`, `POST /api/pm/run` | preventive maintenance |
 | `GET /api/reports?from&to&technician&tz`, `PUT /api/reports/notes` | reports |
 | `GET/POST /api/users`, `PATCH /api/users/:id` | people (supervisor) |
 | `POST /api/ingest/email` | work order from an email; also accepts `X-Ingest-Token` without sign-in when `INGEST_TOKEN` is set |
-| `POST /api/ingest/notes[/preview]` | log from pasted notes |
+| `POST /api/ingest/notes[/preview]` | voice / typed / pasted entries (`{text, date, clientId, source}`) |
 | `GET /api/dashboard`, `GET /api/export` | analytics, backup download |
 
 Environment: `PORT`, `DATA_DIR`, `TZ`, `INGEST_TOKEN`, `SECURE_COOKIES`,

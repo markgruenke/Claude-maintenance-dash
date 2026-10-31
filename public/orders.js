@@ -186,7 +186,6 @@ export async function openWorkOrder(id, onChange = () => {}) {
       ]),
       el('div', { class: 'row-end left' }, [
         el('button', { class: 'primary', onclick: () => { close(); openLogForm({ mode: 'log', workOrder: w, onDone: onChange }); } }, '+ Log work on this'),
-        el('button', { onclick: () => { close(); openLogForm({ mode: 'start', workOrder: w, onDone: onChange }); } }, '▶ Start timer'),
         w.status !== 'completed' ? el('button', { onclick: async () => {
           await api('/api/work-orders/' + w.id, { method: 'PATCH', body: { status: 'completed' } });
           toast('Marked completed'); close(); onChange();
@@ -220,7 +219,7 @@ export async function openWorkOrder(id, onChange = () => {}) {
       el('div', { class: 'timeline' }, timeline.map((t) => {
         if (t.kind === 'log') {
           return el('div', { class: 'tl log' }, [
-            el('div', { class: 'tl-when' }, `${fmtDay(t.l.date)} · ${t.l.technician || '—'} · ${t.l.running ? 'timer running' : fmtHours(t.l.minutes)}`),
+            el('div', { class: 'tl-when' }, [fmtDay(t.l.date), t.l.technician || '—', t.l.minutes ? fmtHours(t.l.minutes) : ''].filter(Boolean).join(' · ')),
             el('div', {}, t.l.notes || el('span', { class: 'muted' }, '(no notes)')),
           ]);
         }

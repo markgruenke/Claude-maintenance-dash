@@ -175,30 +175,45 @@ input[type=checkbox] { width: 22px; height: 22px; min-height: 0; accent-color: v
 .tab.on { background: var(--series-1-soft); border-color: var(--series-1); font-weight: 650; }
 
 /* ------------------------------------------------------------- today */
-.big-actions { display: grid; grid-template-columns: 2fr 1.3fr 1fr; gap: 10px; margin-bottom: 12px; }
-@media (max-width: 600px) { .big-actions { grid-template-columns: 1fr 1fr; } .big-actions .primary { grid-column: 1 / -1; } }
-button.huge { min-height: 72px; font-size: 18px; font-weight: 650; border-radius: 14px; }
-button.huge .ico { font-size: 22px; }
-
-.timers { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
-.timer-card {
-  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  border: 2px solid var(--series-1); background: var(--series-1-soft); border-radius: 14px; padding: 12px 14px;
+.voice-card {
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 16px;
+  padding: 20px 16px 14px; margin-bottom: 12px;
 }
-.timer-card .tc-title { font-weight: 650; font-size: 16px; }
-.timer-card .clock { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mic-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.mic-btn {
+  width: 132px; height: 132px; border-radius: 50%; padding: 0;
+  background: var(--series-1); color: #fff; border: 0;
+  box-shadow: 0 6px 20px rgba(42, 120, 214, .35);
+  touch-action: manipulation;
+}
+.mic-btn:hover { background: var(--series-1); filter: brightness(1.08); }
+.mic-btn svg { width: 60px; height: 60px; }
+.mic-btn.listening { background: var(--status-critical); box-shadow: 0 0 0 0 rgba(208, 59, 59, .5); animation: mic-pulse 1.4s ease-out infinite; }
+.mic-btn.listening:hover { background: var(--status-critical); }
+@keyframes mic-pulse { to { box-shadow: 0 0 0 26px rgba(208, 59, 59, 0); } }
+@media (prefers-reduced-motion: reduce) { .mic-btn.listening { animation: none; } }
+.mic-label { font-size: 19px; font-weight: 650; }
+.mic-example { font-size: 13.5px; color: var(--text-muted); max-width: 520px; }
+.voice-tip { margin: 14px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--series-1-soft); font-size: 14px; }
+.voice-text { margin-top: 14px; font-size: 17px; min-height: 84px; }
+.voice-actions { display: flex; align-items: center; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 
-.entries { display: flex; flex-direction: column; gap: 8px; }
-.entry { display: flex; gap: 12px; border: 1px solid var(--border); border-radius: 12px; padding: 12px; flex-wrap: wrap; }
+.entries { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.entry { display: flex; gap: 12px; border: 1px solid var(--border); border-radius: 12px; padding: 12px; flex-wrap: wrap; align-items: flex-start; }
 .entry.is-entered { background: var(--entered); }
-.entry-main { flex: 1; min-width: 240px; }
-.entry-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.entry-head .hours { font-weight: 700; font-variant-numeric: tabular-nums; }
-.entry-notes { margin-top: 4px; white-space: pre-wrap; }
-.entry-actions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.entry-time { font-weight: 700; font-variant-numeric: tabular-nums; width: 72px; flex: none; padding-top: 1px; }
+.entry-main { flex: 1; min-width: 220px; }
+.entry-notes { white-space: pre-wrap; font-size: 15.5px; }
+.entry-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.fact { font-size: 12.5px; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: var(--surface-2); color: var(--text-secondary); }
+.fact.good { color: var(--good-text); }
+.fact.warn { color: #9a5b00; }
+@media (prefers-color-scheme: dark) { .fact.warn { color: var(--status-warning); } }
+.fact.link { color: var(--series-1); }
+.entry-actions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-left: auto; }
 .entered { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: 14px; }
 .entered:hover { background: var(--wash); }
-.wo-link { font-size: 14px; }
+@media (max-width: 600px) { .entry-time { width: auto; flex-basis: 100%; } .entry-actions { margin-left: 0; } }
 
 .wo-list { display: flex; flex-direction: column; }
 .wo-row { display: flex; align-items: center; gap: 8px; padding: 10px 4px; border-bottom: 1px solid var(--grid); cursor: pointer; flex-wrap: wrap; }
@@ -206,6 +221,8 @@ button.huge .ico { font-size: 22px; }
 .wo-row:hover { background: var(--wash); }
 .wo-row .date-col { width: 100px; font-weight: 600; }
 .wo-row .grow { flex-basis: 220px; }
+
+.toast-action { margin-left: 14px; min-height: 32px; padding: 4px 12px; background: transparent; color: inherit; border-color: currentColor; font-weight: 700; }
 
 /* ------------------------------------------------------------ log form */
 .logform .newjob { border-left: 3px solid var(--series-1); padding-left: 12px; margin-top: 4px; }

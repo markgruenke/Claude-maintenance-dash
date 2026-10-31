@@ -1,18 +1,17 @@
-/* The work-entry form, used four ways:
-     mode 'log'   — log finished work in one go
-     mode 'start' — start a job timer (no time/result yet)
-     mode 'stop'  — stop a running timer and finish the entry
-     mode 'edit'  — fix an existing entry
-   Built for a tablet: big targets, chips for common values, few required
-   fields (just "what did you do"). */
+/* The detailed work-entry form (the voice/typed box on Today is the quick
+   way). Two modes:
+     mode 'log'  — log work with every field spelled out
+     mode 'edit' — fix an existing entry (e.g. a mis-heard voice entry)
+   Built for a tablet: big targets, chips for common values, and only one
+   required field ("what was done"). */
 
 import {
   el, api, toast, state, isSupervisor, openModal, field, select, segmented,
-  machineName, woLabel, localDate, parsePartList, uid, fmtElapsed, fmtTime, statusText,
+  machineName, woLabel, localDate, parsePartList, uid, statusText,
 } from './core.js';
 
 const TIME_CHIPS = [[15, '15m'], [30, '30m'], [45, '45m'], [60, '1h'], [90, '1.5h'], [120, '2h'], [180, '3h'], [240, '4h']];
-const RESULTS = [['in_progress', 'Still working'], ['waiting_parts', 'Waiting on parts'], ['completed', 'Fixed / done']];
+const RESULTS = [['completed', 'Done'], ['in_progress', 'Still open'], ['waiting_parts', 'Waiting on parts']];
 
 function recentMachines() {
   try { return JSON.parse(localStorage.getItem('mt_recent_machines') || '[]'); } catch { return []; }
@@ -29,8 +28,8 @@ export function currentWorker() {
 
 /**
  * @param {object} o
- * @param {'log'|'start'|'stop'|'edit'} o.mode
- * @param {object} [o.log]        existing entry (stop/edit)
+ * @param {'log'|'edit'} o.mode
+ * @param {object} [o.log]        existing entry (edit)
  * @param {object} [o.workOrder]  pre-selected work order
  * @param {string} [o.date]       default date
  * @param {Function} [o.onDone]
@@ -44,7 +43,7 @@ export async function openLogForm(o = {}) {
   const presetWo = o.workOrder || (log && log.workOrderId ? openOrders.find((w) => w.id === log.workOrderId) : null);
   const initialMachine = presetWo ? machineName(presetWo.machineId) : (log ? machineName(log.machineId) : '');
 
-  const title = { log: 'Log work', start: 'Start a job', stop: 'Finish job', edit: 'Edit entry' }[mode];
+  const title = { log: 'Log work', edit: 'Edit entry' }[mode];
 
   openModal(title, (close) => {
     // ---- machine
@@ -93,7 +92,7 @@ export async function openLogForm(o = {}) {
     // ---- notes
     const notes = el('textarea', {
       class: 'big', rows: 4,
-      placeholder: mode === 'start' ? 'What are you about to do? (optional)' : 'What did you do / find? (tap the mic on the keyboard to dictate)',
+      placeholder: 'What did you do / find? (tap the mic on the keyboard to dictate)',
     });
     notes.value = log ? log.notes : '';
 
@@ -109,21 +108,14 @@ export async function openLogForm(o = {}) {
     };
     minutesInput.addEventListener('input', () => { minutes = minutesInput.value === '' ? null : Number(minutesInput.value); drawTime(); });
     if (minutes != null) minutesInput.value = minutes;
-    let timerHint = null;
-    if (mode === 'stop' && log && log.startedAt) {
-      const elapsed = Math.max(1, Math.round((Date.now() - Date.parse(log.startedAt)) / 60000));
-      minutes = elapsed;
-      minutesInput.value = elapsed;
-      timerHint = `Timer: started ${fmtTime(log.startedAt)}, ${fmtElapsed(Date.now() - Date.parse(log.startedAt))}. Adjust if you took a break.`;
-    }
     drawTime();
 
     // ---- result + parts
-    const result = segmented(RESULTS, mode === 'edit' ? null : 'in_progress');
+    const result = segmented(RESULTS, mode === 'edit' ? null : 'completed');
     const partsUsed = el('input', { placeholder: 'e.g. drive belt, 2x bearing', class: 'big' });
     const partsNeeded = el('input', { placeholder: 'e.g. coolant pump, 4x filter', class: 'big' });
     partsNeeded.addEventListener('input', () => {
-      if (partsNeeded.value.trim() && result.value === 'in_progress') result.value = 'waiting_parts';
+      if (partsNeeded.value.trim() && result.value !== 'waiting_parts') result.value = 'waiting_parts';
     });
 
     // ---- who/when
@@ -132,7 +124,7 @@ export async function openLogForm(o = {}) {
       ? el('input', { list: 'tech-list', value: log ? log.technician : currentWorker() })
       : null;
 
-    const saveBtn = el('button', { class: 'primary big', type: 'button' }, mode === 'start' ? '▶ Start timer' : 'Save');
+    const saveBtn = el('button', { class: 'primary big', type: 'button' }, 'Save');
 
     async function save() {
       const job = jobSelect.value;
@@ -141,7 +133,7 @@ export async function openLogForm(o = {}) {
         newTitle.focus();
         return;
       }
-      if (mode !== 'start' && !notes.value.trim()) {
+      if (!notes.value.trim()) {
         toast('Write a few words about what you did');
         notes.focus();
         return;
@@ -160,10 +152,8 @@ export async function openLogForm(o = {}) {
       } else if (job) {
         body.workOrderId = job;
       }
-      if (mode !== 'start') {
-        body.minutes = minutes == null ? 0 : minutes;
-      }
-      if (mode === 'log' || mode === 'stop') {
+      body.minutes = minutes == null ? 0 : minutes;
+      if (mode === 'log') {
         body.statusAfter = result.value;
         body.partsUsed = parsePartList(partsUsed.value);
         body.partsNeeded = parsePartList(partsNeeded.value);
@@ -172,8 +162,6 @@ export async function openLogForm(o = {}) {
       try {
         let out;
         if (mode === 'log') out = await api('/api/work-logs', { method: 'POST', body, queue: true });
-        else if (mode === 'start') out = await api('/api/work-logs/start', { method: 'POST', body, queue: true });
-        else if (mode === 'stop') out = await api(`/api/work-logs/${log.id}/stop`, { method: 'POST', body, queue: true });
         else {
           const patch = { date: body.date, machineName: body.machineName, notes: body.notes, minutes: body.minutes, workOrderId: job && job !== '__new' ? job : null };
           if (tech) patch.technician = body.technician;
@@ -184,9 +172,7 @@ export async function openLogForm(o = {}) {
         close();
         if (!out.queued) {
           toast({
-            log: out.createdOrder ? 'Logged — new work order created' : 'Work logged',
-            start: 'Timer started',
-            stop: 'Job logged',
+            log: 'Work logged',
             edit: 'Entry updated',
           }[mode]);
         }
@@ -203,14 +189,13 @@ export async function openLogForm(o = {}) {
       chipBox,
       field('Job', jobSelect),
       newJobBox,
-      field(mode === 'start' ? 'Notes' : 'What was done', notes),
-      mode !== 'start' ? el('div', { class: 'fld' }, [
-        el('span', { class: 'fld-label' }, 'Time spent'),
+      field('What was done', notes),
+      el('div', { class: 'fld' }, [
+        el('span', { class: 'fld-label' }, 'Time spent (optional)'),
         el('div', { class: 'time-row' }, [timeChips, el('span', { class: 'or' }, 'or'), minutesInput, el('span', { class: 'muted' }, 'min')]),
-        timerHint ? el('span', { class: 'fld-hint' }, timerHint) : null,
-      ]) : null,
-      (mode === 'log' || mode === 'stop') ? el('div', { class: 'fld' }, [el('span', { class: 'fld-label' }, 'Where does it stand?'), result.node]) : null,
-      (mode === 'log' || mode === 'stop') ? el('div', { class: 'row2' }, [
+      ]),
+      mode === 'log' ? el('div', { class: 'fld' }, [el('span', { class: 'fld-label' }, 'Where does it stand?'), result.node]) : null,
+      mode === 'log' ? el('div', { class: 'row2' }, [
         field('Parts used', partsUsed, 'Separate with commas'),
         field('Parts needed', partsNeeded, 'Added to the parts list'),
       ]) : null,

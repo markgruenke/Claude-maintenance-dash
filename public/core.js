@@ -42,9 +42,12 @@ export function mount(root, ...nodes) {
   root.replaceChildren(...nodes.filter((n) => n !== null && n !== undefined && n !== false));
 }
 
-export function toast(msg, ms = 2600) {
+export function toast(msg, ms = 2600, action = null) {
   const t = $('#toast');
-  t.textContent = msg;
+  t.replaceChildren(document.createTextNode(msg));
+  if (action) {
+    t.append(el('button', { class: 'toast-action', onclick: () => { t.style.display = 'none'; action.fn(); } }, action.label));
+  }
   t.style.display = 'block';
   clearTimeout(t._timer);
   t._timer = setTimeout(() => { t.style.display = 'none'; }, ms);

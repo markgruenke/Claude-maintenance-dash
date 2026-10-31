@@ -71,8 +71,7 @@ function dailyView(r, period, refresh) {
   const entries = r.entries;
   const entered = entries.filter((e) => e.entered).length;
   const entryText = (e) => [
-    [e.workOrderLabel, e.machineName, fmtHours(e.minutes)].filter(Boolean).join(' — '),
-    e.workOrderTitle ? 'Job: ' + e.workOrderTitle : '',
+    [e.clock, e.machineName, e.minutes ? fmtHours(e.minutes) : '', e.orderNumber ? 'WO#' + e.orderNumber : ''].filter(Boolean).join(' — '),
     e.notes,
     e.partsUsed.length ? 'Parts used: ' + e.partsUsed.join(', ') : '',
     e.partsNeeded.length ? 'Parts needed: ' + e.partsNeeded.join(', ') : '',
@@ -93,16 +92,15 @@ function dailyView(r, period, refresh) {
           catch (err) { toast(err.message); }
         },
       })),
-      el('td', { class: 'nowrap' }, e.workOrderLabel ? el('a', { href: '#', onclick: (ev) => { ev.preventDefault(); openWorkOrder(e.workOrderId, refresh); } }, e.workOrderLabel) : '—'),
-      el('td', {}, e.machineName || '—'),
+      el('td', { class: 'nowrap' }, e.clock),
+      el('td', {}, [e.machineName || '—', e.orderNumber ? el('div', { class: 'muted small' }, 'WO#' + e.orderNumber) : null]),
       el('td', {}, [
-        e.workOrderTitle ? el('div', { class: 'strong' }, e.workOrderTitle) : null,
-        el('div', { class: 'pre' }, e.running ? '(timer still running) ' + e.notes : e.notes),
+        el('div', { class: 'pre' }, e.notes),
         e.partsUsed.length ? el('div', { class: 'muted small' }, 'Used: ' + e.partsUsed.join(', ')) : null,
         e.partsNeeded.length ? el('div', { class: 'muted small' }, 'Needed: ' + e.partsNeeded.join(', ')) : null,
       ]),
       el('td', {}, e.technician),
-      el('td', { class: 'num nowrap' }, e.running ? 'running' : fmtHours(e.minutes)),
+      el('td', { class: 'num nowrap' }, e.minutes ? fmtHours(e.minutes) : '—'),
       el('td', { class: 'no-print' }, el('button', { class: 'ghost', onclick: () => copyText(entryText(e)) }, 'Copy')),
     ]));
   }
@@ -120,7 +118,7 @@ function dailyView(r, period, refresh) {
       kpi('Entered in company system', `${entered} / ${entries.length}`, entries.length && entered === entries.length ? 'good' : ''),
     ]),
     el('div', { class: 'card flush' }, entries.length ? el('div', { class: 'table-scroll' }, el('table', { class: 'data' }, [
-      el('thead', {}, el('tr', {}, [el('th', { class: 'no-print' }, '✓'), el('th', {}, 'WO'), el('th', {}, 'Machine'), el('th', {}, 'Work done'), el('th', {}, 'Tech'), el('th', { class: 'num' }, 'Time'), el('th', { class: 'no-print' }, '')])),
+      el('thead', {}, el('tr', {}, [el('th', { class: 'no-print' }, '✓'), el('th', {}, 'Time'), el('th', {}, 'Machine'), el('th', {}, 'Work done'), el('th', {}, 'Tech'), el('th', { class: 'num' }, 'Spent'), el('th', { class: 'no-print' }, '')])),
       el('tbody', {}, rows),
     ])) : el('div', { class: 'empty' }, 'No work logged in this period.')),
   ]);

@@ -142,17 +142,66 @@ function changeWorkOrder(wo, fields, by) {
 
 // ---------------------------------------------------------- work commits
 
+// Words that say nothing about *which* problem an entry is about.
+const FILLER = new Set(('the and for with that this was were have has had from into onto then than they them ' +
+  'about around still need needs needed order ordered waiting parts part replaced replace checked check fixed ' +
+  'working work worked running back again today hour hours minute minutes looked look some more just also ' +
+  'went came got done tested test said says will would could should there their what when where which while ' +
+  'machine issue problem down good fine new old one two three four five half couple').split(' '));
+
+const stem = (w) => w.replace(/(?:ing|ed|es|s)$/, '');
+const FILLER_STEMS = new Set([...FILLER].map(stem));
+
+function keywords(text, machineName = '') {
+  const skip = new Set(store.normalizeName(machineName).split(' ').map(stem));
+  return new Set((String(text).toLowerCase().match(/[a-z][a-z-]{3,}/g) || [])
+    .map(stem)
+    .filter((w) => w.length >= 3 && !FILLER_STEMS.has(w) && !skip.has(w)));
+}
+
 /**
- * The one place a piece of finished work gets recorded — used by the quick
- * log form, the job timer's stop button and the notes parser.
- *
- * Finds or creates the work order, writes (or finalizes) the log entry,
- * files parts used / needed, and moves the order's status along.
+ * Which open job on this machine (if any) is this entry about? Only one that
+ * shares a meaningful word with it ("hydraulic", "leak", "coolant"…).
+ * Otherwise the entry gets its own job, so unrelated work on the same
+ * machine (a PM, a different fault) doesn't get merged together.
  */
-function commitWork(body, user, existingLog = null) {
-  const worker = existingLog
-    ? { technician: existingLog.technician, userId: existingLog.userId }
-    : workerFor(user, body.technician);
+function matchOpenJob(machine, text) {
+  const said = keywords(text, machine.name);
+  let best = null;
+  let bestScore = 0;
+  const open = store.listWorkOrders()
+    .filter((w) => w.machineId === machine.id && !store.CLOSED.includes(w.status))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  for (const w of open) {
+    const theirs = keywords(w.title + ' ' + w.description, machine.name);
+    let score = 0;
+    for (const k of said) if (theirs.has(k)) score++;
+    // A PM job only takes entries that say "PM" or clearly match it.
+    if (w.pmId && !/\b(?:pm|preventive|preventative)\b/i.test(text) && score < 2) continue;
+    if (score > bestScore) { best = w; bestScore = score; }
+  }
+  return best;
+}
+
+/** A short job title from free text: the first sentence, trimmed. */
+function titleFrom(text, fallback) {
+  const first = String(text || '').split(/(?<=[.!?])\s+|\n/)[0].replace(/[.!?]+$/, '').trim();
+  if (!first) return fallback;
+  if (first.length <= 70) return first.charAt(0).toUpperCase() + first.slice(1);
+  const cut = first.slice(0, 70);
+  return cut.slice(0, cut.lastIndexOf(' ') > 40 ? cut.lastIndexOf(' ') : 70) + '…';
+}
+
+/**
+ * The one place a piece of work gets recorded — used by voice/typed
+ * entries, the detailed form, and pasted notes.
+ *
+ * Attaches the entry to a job (the WO# mentioned, the machine's open job, or
+ * a new job made automatically), files parts used / needed, and moves the
+ * job's status along. Nobody has to fill in work-order details by hand.
+ */
+function commitWork(body, user) {
+  const worker = workerFor(user, body.technician);
   let machine = resolveMachineFromBody(body);
 
   // --- which work order?
@@ -161,25 +210,20 @@ function commitWork(body, user, existingLog = null) {
   if (body.workOrderId) {
     workOrder = store.findWorkOrder(body.workOrderId);
     if (!workOrder) fail(400, 'That work order no longer exists');
-  } else if (existingLog && existingLog.workOrderId && !body.newOrderTitle) {
-    workOrder = store.findWorkOrder(existingLog.workOrderId);
   }
   const orderNumber = String(body.orderNumber || '').trim();
   if (!workOrder && orderNumber) workOrder = store.findWorkOrderByNumber(orderNumber);
   if (!machine && workOrder && workOrder.machineId) machine = store.findMachine(workOrder.machineId);
-  if (!machine && existingLog && existingLog.machineId) machine = store.findMachine(existingLog.machineId);
 
   if (!workOrder && body.attachToOpen && machine) {
-    workOrder = store.listWorkOrders()
-      .filter((w) => w.machineId === machine.id && !store.CLOSED.includes(w.status))
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] || null;
+    workOrder = matchOpenJob(machine, String(body.notes || ''));
   }
-  const notes = String(body.notes ?? (existingLog ? existingLog.notes : '')).trim();
+  const notes = String(body.notes || '').trim();
   if (!workOrder && (machine || body.newOrderTitle || orderNumber)) {
     workOrder = store.createWorkOrder({
       machineId: machine ? machine.id : null,
       orderNumber,
-      title: (String(body.newOrderTitle || '').trim() || notes.split('\n')[0] || 'Work on ' + (machine ? machine.name : 'equipment')).slice(0, 120),
+      title: String(body.newOrderTitle || '').trim() || titleFrom(notes, 'Work on ' + (machine ? machine.name : 'equipment')),
       description: notes,
       priority: body.priority,
       source: body.source || 'tablet',
@@ -189,7 +233,7 @@ function commitWork(body, user, existingLog = null) {
   }
 
   // --- the log entry
-  const logFields = {
+  const log = store.createWorkLog({
     workOrderId: workOrder ? workOrder.id : null,
     machineId: machine ? machine.id : (workOrder ? workOrder.machineId : null),
     technician: worker.technician,
@@ -199,23 +243,9 @@ function commitWork(body, user, existingLog = null) {
     minutes: body.minutes,
     notes,
     clientId: body.clientId,
-  };
-  let log;
-  if (existingLog) {
-    const endedAt = new Date().toISOString();
-    const timed = existingLog.startedAt
-      ? Math.max(1, Math.round((Date.parse(endedAt) - Date.parse(existingLog.startedAt)) / 60000))
-      : 0;
-    log = store.updateWorkLog(existingLog.id, {
-      ...logFields,
-      date: store.isDateStr(body.date) ? body.date : existingLog.date,
-      minutes: body.minutes != null && body.minutes !== '' ? body.minutes : timed,
-      running: false,
-      endedAt,
-    });
-  } else {
-    log = store.createWorkLog(logFields);
-  }
+    source: body.source,
+    createdOrderId: createdOrder ? workOrder.id : null,
+  });
 
   // --- parts
   const partFields = { machineId: log.machineId, workOrderId: log.workOrderId, logId: log.id, requestedBy: worker.technician };
@@ -227,6 +257,9 @@ function commitWork(body, user, existingLog = null) {
     const patch = {};
     let next = body.statusAfter;
     if (!next && partsNeeded.length) next = 'waiting_parts';
+    // A job made just now from an entry that didn't say "still working" etc.
+    // is a one-off that's finished; don't leave it cluttering the open list.
+    if (!next && createdOrder && body.defaultNewStatus) next = body.defaultNewStatus;
     if (!next && workOrder.status === 'open') next = 'in_progress';
     if (store.WORK_ORDER_STATUSES.includes(next) && next !== workOrder.status && workOrder.status !== 'completed') patch.status = next;
     if (!workOrder.assignedTo) patch.assignedTo = worker.technician;
@@ -234,6 +267,19 @@ function commitWork(body, user, existingLog = null) {
   }
 
   return { workOrder, createdOrder, log, partsUsed, partsNeeded };
+}
+
+/**
+ * Remove an entry and whatever it created on its own: its parts, and the
+ * job it opened if nothing else has been logged against that job since.
+ * (So "Undo" after a mis-heard voice entry leaves no trace.)
+ */
+function removeWorkLog(log) {
+  store.deleteWorkLog(log.id);
+  for (const p of store.listParts().filter((x) => x.logId === log.id)) store.deletePart(p.id);
+  if (log.createdOrderId && !store.listWorkLogs().some((l) => l.workOrderId === log.createdOrderId)) {
+    store.deleteWorkOrder(log.createdOrderId);
+  }
 }
 
 /** Turn a parsed email into records. Reuses the order if the WO# is known. */
@@ -508,42 +554,9 @@ async function handleApi(req, res, url) {
       let list = store.listWorkLogs();
       if (from) list = list.filter((l) => l.date >= from && l.date <= to);
       if (tech) list = list.filter((l) => l.technician === tech);
-      if (q('running') === '1') list = list.filter((l) => l.running);
       return sendJson(res, 200, list);
     }
     const body = await readBody(req);
-
-    // Start a job timer: a running log entry with no minutes yet.
-    if (method === 'POST' && seg[2] === 'start') {
-      const dup = store.findWorkLogByClientId(body.clientId);
-      if (dup) return sendJson(res, 200, { log: dup, duplicate: true });
-      const worker = workerFor(user, body.technician);
-      const machine = resolveMachineFromBody(body);
-      let wo = body.workOrderId ? store.findWorkOrder(body.workOrderId) : null;
-      if (!wo && body.newOrderTitle) {
-        wo = store.createWorkOrder({
-          machineId: machine ? machine.id : null, title: body.newOrderTitle,
-          priority: body.priority, source: 'tablet', assignedTo: worker.technician,
-        }, user.name);
-      }
-      if (wo && wo.status === 'open') wo = changeWorkOrder(wo, { status: 'in_progress', ...(wo.assignedTo ? {} : { assignedTo: worker.technician }) }, user.name);
-      const log = store.createWorkLog({
-        workOrderId: wo ? wo.id : null,
-        machineId: machine ? machine.id : (wo ? wo.machineId : null),
-        ...worker, loggedBy: user.name,
-        date: body.date, minutes: 0, notes: String(body.notes || '').trim(),
-        running: true, startedAt: new Date().toISOString(), clientId: body.clientId,
-      });
-      return sendJson(res, 201, { log, workOrder: wo });
-    }
-
-    if (method === 'POST' && seg[2] && seg[3] === 'stop') {
-      const log = store.findWorkLog(seg[2]);
-      if (!log) fail(404, 'not found');
-      if (!canEditLog(user, log)) fail(403, 'You can only stop your own jobs');
-      if (!log.running) return sendJson(res, 200, { log, alreadyStopped: true });
-      return sendJson(res, 200, commitWork(body, user, log));
-    }
 
     if (method === 'POST' && !seg[2]) {
       const dup = store.findWorkLogByClientId(body.clientId);
@@ -556,7 +569,7 @@ async function handleApi(req, res, url) {
       if (!log) fail(404, 'not found');
       if (!canEditLog(user, log)) fail(403, 'You can only change your own entries');
       if (method === 'DELETE') {
-        store.deleteWorkLog(log.id);
+        removeWorkLog(log);
         return sendJson(res, 200, { ok: true });
       }
       const patch = { ...body };
@@ -652,8 +665,12 @@ async function handleApi(req, res, url) {
       if (!body.text) fail(400, 'text required');
       return sendJson(res, 200, parser.parseNotes(body.text, store.listMachines().map((m) => m.name)));
     }
+    // Voice / typed / pasted entries all land here. Resends from the
+    // tablet's offline queue are recognised by clientId and ignored.
     if (seg[2] === 'notes') {
-      if (!body.text) fail(400, 'text required');
+      if (!String(body.text || '').trim()) fail(400, 'Say or type what you did first');
+      const dup = store.findWorkLogByClientId(body.clientId);
+      if (dup) return sendJson(res, 200, { log: dup, duplicate: true });
       const parsed = parser.parseNotes(body.text, store.listMachines().map((m) => m.name));
       const o = body.overrides || {};
       const out = commitWork({
@@ -667,7 +684,9 @@ async function handleApi(req, res, url) {
         partsUsed: o.partsUsed ?? parsed.partsUsed,
         partsNeeded: o.partsNeeded ?? parsed.partsNeeded,
         statusAfter: o.statusHint ?? parsed.statusHint,
-        source: 'notes',
+        clientId: body.clientId,
+        defaultNewStatus: 'completed',
+        source: ['voice', 'typed', 'notes'].includes(body.source) ? body.source : 'notes',
       }, user);
       return sendJson(res, 201, { parsed, ...out });
     }

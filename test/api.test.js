@@ -1,0 +1,183 @@
+'use strict';
+/**
+ * End-to-end API tests. Run with:  node --test
+ * Each run uses a throwaway data folder, so real data is never touched.
+ */
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'mt-test-'));
+process.env.DATA_DIR = DATA_DIR;
+
+// A v1 database (from before accounts existed) to prove the upgrade path.
+fs.writeFileSync(path.join(DATA_DIR, 'db.json'), JSON.stringify({
+  machines: [{ id: 'm1', name: 'Lathe 1', area: '', notes: '', createdAt: '2026-01-01T00:00:00.000Z' }],
+  workOrders: [{ id: 'w1', orderNumber: '777', machineId: 'm1', title: 'Old order', description: '', priority: 'low', status: 'open', assignedTo: 'Mark', source: 'email', createdAt: '2026-01-02T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z', completedAt: null }],
+  workLogs: [{ id: 'l1', workOrderId: 'w1', machineId: 'm1', technician: 'Mark', date: '2026-01-02', minutes: 30, notes: 'looked at it', createdAt: '2026-01-02T00:00:00.000Z' }],
+  parts: [], technicians: [{ id: 't1', name: 'Mark', email: '' }], meta: { schemaVersion: 1 },
+}));
+
+const { server } = require('../server');
+const reports = require('../lib/reports');
+let base;
+
+function client() {
+  let cookie = '';
+  return async (method, url, body, headers = {}) => {
+    const res = await fetch(base + url, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}), ...headers },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const set = res.headers.get('set-cookie');
+    if (set) cookie = set.split(';')[0];
+    let data = null;
+    try { data = await res.json(); } catch { /* empty */ }
+    return { status: res.status, data };
+  };
+}
+
+const sup = client();
+const tech = client();
+
+test.before(() => new Promise((resolve) => {
+  server.listen(0, '127.0.0.1', () => { base = `http://127.0.0.1:${server.address().port}`; resolve(); });
+}));
+test.after(() => { server.close(); fs.rmSync(DATA_DIR, { recursive: true, force: true }); });
+
+test('v1 data is upgraded: orders get a reference number', async () => {
+  const s = await sup('GET', '/api/auth/status');
+  assert.equal(s.data.setupNeeded, true);
+  const r = await sup('POST', '/api/auth/setup', { name: 'Mark', secret: 'correct horse' });
+  assert.equal(r.status, 201);
+  const orders = await sup('GET', '/api/work-orders');
+  assert.equal(orders.data[0].ref, 1);
+  assert.deepEqual(orders.data[0].history, []);
+});
+
+test('everything needs a sign-in, and setup only happens once', async () => {
+  const anon = client();
+  assert.equal((await anon('GET', '/api/work-orders')).status, 401);
+  assert.equal((await anon('POST', '/api/auth/setup', { name: 'Eve', secret: 'longenough' })).status, 409);
+});
+
+test('writes must be JSON (blocks cross-site form posts)', async () => {
+  const res = await fetch(base + '/api/work-orders', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{}' });
+  assert.equal(res.status, 415);
+});
+
+test('supervisor adds a technician; short PINs are refused', async () => {
+  assert.equal((await sup('POST', '/api/users', { name: 'Dave', role: 'tech', secret: '12' })).status, 400);
+  assert.equal((await sup('POST', '/api/users', { name: 'Dave', role: 'tech', secret: '4321' })).status, 201);
+  assert.equal((await tech('POST', '/api/auth/login', { name: 'dave', secret: '4321' })).status, 200);
+  assert.equal((await tech('GET', '/api/users')).status, 403);
+});
+
+test('wrong PINs lock the name out', async () => {
+  const c = client();
+  await sup('POST', '/api/users', { name: 'Lou', role: 'tech', secret: '9999' });
+  for (let i = 0; i < 5; i++) assert.equal((await c('POST', '/api/auth/login', { name: 'Lou', secret: '0000' })).status, 401);
+  assert.equal((await c('POST', '/api/auth/login', { name: 'Lou', secret: '9999' })).status, 429);
+});
+
+test('quick log creates the order, files parts, sets status, ignores resends', async () => {
+  const body = {
+    clientId: 'abc-1', date: '2026-10-31', machineName: 'CNC 3', newOrderTitle: 'Coolant pump', orderNumber: '10301',
+    notes: 'Impeller cracked', minutes: 60, partsNeeded: [{ name: 'coolant pump', quantity: 1 }], partsUsed: ['hose clamp'],
+  };
+  const r = await tech('POST', '/api/work-logs', body);
+  assert.equal(r.status, 201);
+  assert.equal(r.data.createdOrder, true);
+  assert.equal(r.data.workOrder.status, 'waiting_parts'); // parts needed => waiting
+  assert.equal(r.data.workOrder.assignedTo, 'Dave');
+  assert.equal(r.data.log.technician, 'Dave');
+  assert.equal(r.data.partsUsed[0].status, 'installed');
+  const again = await tech('POST', '/api/work-logs', body);
+  assert.equal(again.data.duplicate, true);
+  const logs = await sup('GET', '/api/work-logs?from=2026-10-31&to=2026-10-31');
+  assert.equal(logs.data.length, 1);
+});
+
+test('techs cannot log as someone else; supervisors can', async () => {
+  const t = await tech('POST', '/api/work-logs', { technician: 'Mark', date: '2026-10-31', machineName: 'Press 2', notes: 'greased', minutes: 15 });
+  assert.equal(t.data.log.technician, 'Dave');
+  const s = await sup('POST', '/api/work-logs', { technician: 'Dave', date: '2026-10-31', machineName: 'Press 2', notes: 'checked oil', minutes: 10 });
+  assert.equal(s.data.log.technician, 'Dave');
+  assert.equal(s.data.log.loggedBy, 'Mark');
+});
+
+test('techs can only edit their own entries', async () => {
+  const mine = await sup('POST', '/api/work-logs', { date: '2026-11-01', machineName: 'Lathe 1', workOrderId: 'w1', notes: 'Mark work', minutes: 20 });
+  assert.equal((await tech('PATCH', '/api/work-logs/' + mine.data.log.id, { notes: 'x' })).status, 403);
+  assert.equal((await sup('PATCH', '/api/work-logs/' + mine.data.log.id, { entered: true })).data.entered, true);
+});
+
+test('job timer: start, stop computes minutes, stop twice is harmless', async () => {
+  const s = await tech('POST', '/api/work-logs/start', { clientId: 't-1', machineName: 'Conveyor A', newOrderTitle: 'Belt tracking', date: '2026-11-01' });
+  assert.equal(s.data.log.running, true);
+  assert.equal(s.data.workOrder.status, 'in_progress');
+  const stop = await tech('POST', `/api/work-logs/${s.data.log.id}/stop`, { notes: 'Adjusted tracking', statusAfter: 'completed' });
+  assert.equal(stop.data.log.running, false);
+  assert.ok(stop.data.log.minutes >= 1);
+  assert.equal(stop.data.workOrder.status, 'completed');
+  const again = await tech('POST', `/api/work-logs/${s.data.log.id}/stop`, {});
+  assert.equal(again.data.alreadyStopped, true);
+});
+
+test('weekend report buckets work and parts correctly', async () => {
+  const r = (await sup('GET', '/api/reports?from=2026-10-30&to=2026-11-01&tz=UTC')).data;
+  assert.equal(r.totals.entries, 5);
+  assert.ok(r.workedOpen.some((o) => o.title === 'Coolant pump' && o.status === 'waiting_parts'));
+  assert.ok(r.partsNeeded.some((p) => p.name === 'coolant pump'));
+  assert.match(r.handoffText, /STILL OPEN — WORKED ON THIS PERIOD/);
+  assert.match(r.dailyText, /WO#10301 — CNC 3 — 1 h/);
+  const daveOnly = (await sup('GET', '/api/reports?from=2026-10-30&to=2026-11-01&technician=Dave&tz=UTC')).data;
+  assert.ok(daveOnly.entries.every((e) => e.technician === 'Dave'));
+
+  await sup('PUT', '/api/reports/notes', { key: r.key, text: 'Press 2 is locked out' });
+  const withNote = (await sup('GET', '/api/reports?from=2026-10-30&to=2026-11-01&tz=UTC')).data;
+  assert.match(withNote.handoffText, /Press 2 is locked out/);
+});
+
+test('report dates follow the viewer time zone, not UTC', () => {
+  // 03:30 UTC Sunday is still Saturday evening in Chicago.
+  assert.equal(reports.dateIn('2026-11-01T03:30:00Z', 'America/Chicago'), '2026-10-31');
+  assert.equal(reports.dateIn('2026-11-01T03:30:00Z', 'UTC'), '2026-11-01');
+});
+
+test('PM: due schedule makes one work order; completing it rolls the date forward once', async () => {
+  const today = require('../lib/store').localDate();
+  const pmRes = await sup('POST', '/api/pm', { title: 'Grease ram', machineName: 'Press 2', intervalDays: 30, leadDays: 2, nextDueDate: today });
+  assert.equal(pmRes.status, 201);
+  await sup('POST', '/api/pm/run');
+  const pmOrders = (await sup('GET', '/api/work-orders')).data.filter((w) => w.pmId === pmRes.data.id);
+  assert.equal(pmOrders.length, 1);
+  await sup('PATCH', '/api/work-orders/' + pmOrders[0].id, { status: 'completed' });
+  await sup('PATCH', '/api/work-orders/' + pmOrders[0].id, { title: 'PM: Grease ram (done)' });
+  const pm = (await sup('GET', '/api/pm')).data.find((p) => p.id === pmRes.data.id);
+  assert.equal(pm.lastDoneDate, today);
+  assert.equal(pm.nextDueDate, require('../lib/store').addDays(today, 30));
+  assert.equal(pm.nextDueDate > today, true);
+});
+
+test('cannot remove the last supervisor', async () => {
+  const users = (await sup('GET', '/api/users')).data;
+  const mark = users.find((u) => u.name === 'Mark');
+  assert.equal((await sup('PATCH', '/api/users/' + mark.id, { active: false })).status, 400);
+});
+
+test('only supervisors delete work orders; export has no secrets', async () => {
+  assert.equal((await tech('DELETE', '/api/work-orders/w1')).status, 403);
+  const exp = await sup('GET', '/api/export');
+  assert.equal(exp.data.sessions, undefined);
+  assert.equal(exp.data.users.some((u) => 'hash' in u || 'salt' in u), false);
+});
+
+test('static files cannot escape the public folder', async () => {
+  const res = await fetch(base + '/..%2fserver.js');
+  assert.notEqual(res.status, 200);
+});

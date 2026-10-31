@@ -46,7 +46,8 @@ Power Automate. Build a flow:
 The dashboard machine needs to be reachable from the flow — on a work network
 that usually means running it on a PC or small server with a fixed hostname.
 
-**Set a token** so only your flow can post: start the server with
+**Set a token. This is required:** the tracker needs a sign-in for
+everything, and the token is how an automated sender signs in. Start the server with
 `INGEST_TOKEN=some-secret node server.js` and add an `X-Ingest-Token: some-secret`
 header to the HTTP action.
 
@@ -64,7 +65,8 @@ node scripts/email-poller.js
 
 It only touches messages whose subject matches `subjectFilter`, marks
 ingested mail as read (that's how it avoids duplicates), and never deletes
-or moves anything. Run it alongside the server, e.g. in a second terminal
+or moves anything. Set `ingestToken` in the config to the same value as the
+server's `INGEST_TOKEN`; without it the tracker refuses the email. Run it alongside the server, e.g. in a second terminal
 or as a scheduled task.
 
 ## Tuning the parser to your Plex emails

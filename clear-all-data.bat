@@ -1,5 +1,5 @@
 @echo off
-REM Wipes ALL data (demo or real) so you can start fresh. Asks first.
+REM Wipes all work data (demo or real), keeps accounts. Asks first.
 cd /d "%~dp0"
 
 set "NODE_EXE="
@@ -12,11 +12,11 @@ if not defined NODE_EXE (
 )
 
 echo.
-echo   This deletes everything currently in the dashboard (data\db.json).
-echo   Use this to clear the demo data before you start tracking real work,
-echo   or to wipe the slate clean.
+echo   This erases all work orders, work logs, parts and PM schedules.
+echo   Sign-in accounts are KEPT. Use this to clear the demo data before you
+echo   start tracking real work. Close the dashboard window first.
 echo.
-set /p CONFIRM="Type YES to erase all data: "
+set /p CONFIRM="Type YES to erase all work data: "
 if /i not "%CONFIRM%"=="YES" (
   echo Cancelled. Nothing was deleted.
   pause

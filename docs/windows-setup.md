@@ -20,13 +20,13 @@ software. Verify it worked: open **Command Prompt** and type `node --version`
 
 **Easiest — download a ZIP (no Git needed):**
 1. On the shop PC, go to the project's GitHub page while signed in.
-2. Switch to the branch **`claude/maintenance-dashboard-wx0eue`**.
+2. Switch to the branch **`claude/maintenance-tracking-system-3ocfi8`**.
 3. Click **Code ▸ Download ZIP**, then unzip it somewhere permanent, e.g.
    `C:\MaintenanceDashboard`.
 
 **Or with Git**, if it's installed:
 ```
-git clone -b claude/maintenance-dashboard-wx0eue https://github.com/markgruenke/Claude-maintenance-dash.git C:\MaintenanceDashboard
+git clone -b claude/maintenance-tracking-system-3ocfi8 https://github.com/markgruenke/Claude-maintenance-dash.git C:\MaintenanceDashboard
 ```
 
 Once the files are on the shop PC, GitHub is no longer involved in running it —
@@ -38,12 +38,16 @@ want to pull a future update.)
 Double-click **`start-dashboard.bat`**. A black window opens and shows a
 "running" banner. Open a browser to <http://localhost:3000>.
 
-Want to see it full of example data first?
-Open Command Prompt in the folder and run `node scripts\seed.js`, then refresh.
-When you're ready to track *real* work, wipe the demo data with
-`node scripts\seed.js --clear`.
+The first time, it asks you to **create the supervisor account**: your name
+and a password (8+ characters). That's you. Add technicians later under
+**Team**.
 
-Closing the black window stops the dashboard. That's fine for testing — the
+Want to see it full of example data first? Close the black window, double-click
+**`seed-demo-data.bat`**, then start it again. When you're ready to track
+*real* work, close it and double-click **`clear-all-data.bat`**. It erases the
+demo work but keeps your login.
+
+Closing the black window stops the tracker. That's fine for testing; the
 next steps make it easy to open and keep it running on its own.
 
 ## 4. Put an icon on the desktop
@@ -78,14 +82,17 @@ On the shop PC, open Command Prompt and run `ipconfig`. Note the **IPv4
 Address** (something like `192.168.1.50`). From any other computer on the shop
 network, open `http://192.168.1.50:3000` (use your actual number). Bookmark it.
 
-That IPv4 address is also how coworkers will reach it when you add their work
-later — the app already tracks who did what, so they just start using their
-own name in "Log work."
+**On your tablet** (same Wi-Fi), open the same address, sign in, and use the
+browser's **Add to Home Screen** so it opens like an app. Coworkers get their
+own sign-in from **Team** in the app.
+
+To reach it from *outside* the shop later, see [going-online.md](going-online.md).
 
 ## Backing up your data
 
 Everything you enter lives in one file: **`data\db.json`** inside the folder.
-To back up, copy that file somewhere safe (a network drive, a USB stick) on a
+The tracker also saves a daily copy in **`data\backups\`** (last 30 days), but
+that's on the same PC. To back up properly, copy the `data` folder somewhere safe (a network drive, a USB stick) on a
 schedule. To move the dashboard to a different PC, copy the whole folder —
 `data\db.json` comes with it.
 

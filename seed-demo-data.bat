@@ -1,6 +1,6 @@
 @echo off
 REM Loads example machines / work orders / parts so you can see the dashboard
-REM populated. Safe to run on a fresh copy. Double-click it.
+REM populated. Close the dashboard window first, then double-click this.
 cd /d "%~dp0"
 
 set "NODE_EXE="

@@ -1,115 +1,117 @@
-# Maintenance Dashboard
+# Maintenance Tracker
 
-A self-hosted dashboard for tracking maintenance work: open work orders,
-time spent per machine, parts needed, and automatic "this machine keeps
-breaking" flags. Built to start as a one-person tool and grow into a team
-one — every record already carries a technician field, so adding coworkers
-later is just them picking a name.
+Track maintenance work as you do it, on a tablet, and turn it into the
+reports people need:
 
-**Zero dependencies.** Everything runs on plain Node.js — no `npm install`,
-no build step, no database server. Data lives in a single `data/db.json`
-file you can back up by copying.
+- **End of the day:** a list of everything you did (WO#, machine, time, what was
+  done, parts) to retype into the company system. Tick each one off as you
+  enter it.
+- **End of the weekend:** a handoff report for your supervisor and day shift:
+  what got done, what's still open and where it stands, which parts are needed
+  or on order, plus your notes. Copy as text, email, or print/PDF.
+- **Control center** (PC or tablet): add/edit/assign work orders, due dates,
+  parts, preventive-maintenance schedules, the team, and analytics.
+
+Built to start with one person (you, playing every role) and grow to the whole
+department on one shared system.
+
+**Zero dependencies.** Plain Node.js, no `npm install`, no database server.
+Data lives in `data/db.json`, with automatic daily copies in `data/backups/`.
 
 ## Quick start
 
 ```bash
 node server.js
-# open http://localhost:3000
+# open http://localhost:3000. The first visit creates your supervisor account.
 ```
 
-Want to see it populated first? Seed demo data, poke around, then wipe it:
+On Windows, double-click `start-dashboard.bat` (or make a desktop icon with
+`create-desktop-icon.bat`). See [docs/windows-setup.md](docs/windows-setup.md).
+
+On your **tablet**, on the same Wi-Fi, open `http://<that-PC's-IP>:3000`,
+sign in, and **Add to Home Screen**.
+
+Want to look around first? Close the server, run `node scripts/seed.js`
+(demo data), start it again. When you're done: close it, run
+`node scripts/seed.js --clear` (wipes work data, **keeps your login**).
+
+## The screens
+
+| Screen | What it's for |
+|---|---|
+| **Today** (tablet) | Big **Log work** / **Start job timer** / **Paste notes** buttons; running timers; today's entries with an **Entered** checkbox; your open work orders |
+| **Work Orders** | Every order with filters (open / in progress / waiting parts / overdue / completed), search, and a detail view to edit everything, add parts and notes, see full history |
+| **Parts** | Need to order → on order → received → installed. **Copy order list** for purchasing |
+| **Reports** | *Work list* (end of day) and *Handoff report* for Today, Yesterday, Fri–Sun, Sat–Sun, last 7 days or any dates, for everyone or one person |
+| **Schedule** | Due dates (overdue / today / next 7 days), workload per person, PM schedules |
+| **Dashboard** | Hours and work orders per machine, weekly trend, attention flags (machines breaking down often, repeat issues, stale orders, parts not ordered) |
+| **Team** | Accounts and PINs, machines list, backup download (supervisor) |
+
+### Logging work (the tablet flow)
+
+1. **Log work** → pick the machine (recent ones are one tap) → pick its open
+   job or **+ New job** → say what you did (the keyboard mic works for
+   dictation) → tap a time (15m … 4h) → **Still working / Waiting on parts /
+   Fixed** → parts used / needed (`belt, 2x bearing`) → Save.
+2. Or **Start job timer** when you begin, then **Stop & log** when done; time
+   is filled in for you.
+3. Work orders, statuses and the parts list update themselves from what you log.
+
+### People and roles
+
+- **Supervisor**: everything, including people, PM schedules, deleting orders,
+  and **logging work on anyone's behalf** ("Logging as" on Today). That's how one
+  person can act as the whole crew while setting up.
+- **Technician**: logs their own work, creates/updates orders and parts, sees
+  everything, edits only their own entries.
+
+## Going online later
+
+Not needed now. When you're ready for everyone to use one shared system from
+anywhere, follow [docs/going-online.md](docs/going-online.md) (talk to IT first;
+three ways to do it; HTTPS and settings checklist).
+
+## Tests
 
 ```bash
-node scripts/seed.js          # fake machines/orders/parts so charts render
-node server.js
-node scripts/seed.js --clear  # start fresh for real use
+node --test
 ```
 
-Runs anywhere Node ≥ 18 runs — a spare PC in the shop, a Raspberry Pi, a
-work laptop. `PORT=8080 node server.js` to change the port.
-
-**Running it always-on on a Windows shop computer?** Run
-`create-desktop-icon.bat` once to get a double-click **Maintenance Dashboard**
-icon on the desktop (it starts the server and opens the browser). To also have
-it come back after a reboot on its own, right-click `install-autostart.bat` ▸
-Run as administrator. Full walkthrough (including viewing it from other shop
-PCs and backing up your data) in [docs/windows-setup.md](docs/windows-setup.md).
-
-## What it does
-
-- **Work orders** — from three sources: typed in manually, pasted from a
-  Plex notification email (the parser pulls out the WO#, machine, and
-  priority), or posted automatically by an email forwarder
-  (see [docs/email-setup.md](docs/email-setup.md)).
-- **Log work from your notes** — hit **Log work**, paste the note you
-  already wrote in chat ("Spent 2 hrs on CNC 3, replaced the spindle belt,
-  need to order a coolant pump"), and it extracts the machine, time spent,
-  parts used, and parts needed. You get a preview to correct before it
-  saves. The note attaches to the machine's open work order (or opens one),
-  logs the time, files the parts, and updates the order status when the note
-  says it's fixed or waiting on parts.
-- **Parts tracking** — needed → ordered → received → installed, changed
-  right in the table.
-- **Analytics that watch your back** (computed live, nothing to maintain):
-  - hours logged per machine
-  - work orders per machine (who breaks down the most)
-  - work orders per week trend
-  - **attention flags**: a machine with 3+ orders in 30 days, the same
-    issue recurring on one machine, an order sitting open 14+ days, a part
-    stuck on "needed" 7+ days. Thresholds live in `lib/analytics.js`
-    (`FLAG_RULES`) — tune to taste.
-- **Filters** — date range, machine, technician; every number and chart on
-  the page follows the same filter. Dark mode follows your system setting.
-
-## How data flows
-
-```
-Plex email ──(forwarder or paste)──▶ POST /api/ingest/email ──▶ work order
-chat notes ──(paste into Log work)─▶ POST /api/ingest/notes ──▶ work log
-                                                              + parts used/needed
-                                                              + order status update
-                    dashboard reads GET /api/dashboard ◀── flags & stats derived live
-```
+Runs the API end-to-end against a throwaway data folder.
 
 ## Project layout
 
 ```
-server.js                 HTTP server + REST API (plain Node, no deps)
-lib/store.js              JSON-file data store (swap for SQLite later; API is the contract)
-lib/parser.js             email + notes text parsers
-lib/analytics.js          per-machine stats, trends, attention flags (FLAG_RULES)
-public/                   the dashboard (vanilla JS + hand-built SVG charts)
-scripts/seed.js           demo data in / out
-scripts/email-poller.js   optional IMAP watcher (the only thing needing npm packages)
-docs/email-setup.md       three ways to get emails in automatically
-data/db.json              your data (created on first write; gitignored)
+server.js            HTTP server + REST API + background chores (PM, backups)
+lib/store.js         JSON-file data store (the only file that touches storage)
+lib/auth.js          accounts, scrypt-hashed PINs, sessions, lockout
+lib/reports.js       end-of-day and handoff reports (data + plain text)
+lib/pm.js            preventive maintenance → work orders
+lib/parser.js        email + free-text notes parsers
+lib/analytics.js     per-machine stats, trends, attention flags (FLAG_RULES)
+public/              the app (vanilla JS modules, no build step)
+scripts/seed.js      demo data in / out
+scripts/email-poller.js  optional IMAP watcher (needs npm packages)
+test/                API tests (node --test)
+docs/                Windows setup, no-admin Node, email, going online
 ```
 
-## API
+## API (all JSON, sign-in cookie required)
 
-All JSON. The interesting ones:
-
-| Endpoint | What it does |
+| Endpoint | |
 |---|---|
-| `GET /api/dashboard?from&to&machineId&technician` | everything the UI shows, one call |
-| `POST /api/ingest/email` | `{subject, body}` → parsed → work order (idempotent by WO#) |
-| `POST /api/ingest/notes/preview` | `{text}` → what the parser found, writes nothing |
-| `POST /api/ingest/notes` | `{text, technician, date}` → work log + parts + status |
-| `POST/PATCH /api/work-orders[/:id]` | create / update orders |
-| `POST/PATCH /api/parts[/:id]` | create / update parts |
-| `POST /api/work-logs`, `POST /api/machines` | manual entry |
+| `GET /api/auth/status`, `POST /api/auth/setup|login|logout` | accounts |
+| `GET /api/bootstrap` | machines, people, enums for the UI |
+| `GET/POST /api/work-logs`, `PATCH/DELETE /api/work-logs/:id` | work entries (POST finds/creates the order, files parts, moves status) |
+| `POST /api/work-logs/start`, `POST /api/work-logs/:id/stop` | job timer |
+| `GET/POST /api/work-orders`, `GET/PATCH/DELETE /api/work-orders/:id`, `POST …/:id/notes` | work orders |
+| `GET/POST /api/parts`, `PATCH/DELETE /api/parts/:id` | parts |
+| `GET/POST /api/pm`, `PATCH/DELETE /api/pm/:id`, `POST /api/pm/run` | preventive maintenance |
+| `GET /api/reports?from&to&technician&tz`, `PUT /api/reports/notes` | reports |
+| `GET/POST /api/users`, `PATCH /api/users/:id` | people (supervisor) |
+| `POST /api/ingest/email` | work order from an email; also accepts `X-Ingest-Token` without sign-in when `INGEST_TOKEN` is set |
+| `POST /api/ingest/notes[/preview]` | log from pasted notes |
+| `GET /api/dashboard`, `GET /api/export` | analytics, backup download |
 
-Set `INGEST_TOKEN=secret` when starting the server to require an
-`X-Ingest-Token` header on the ingest endpoints (do this before pointing an
-email forwarder at it).
-
-## Growing it later
-
-- **More technicians:** they just use their name in "Log work" — the
-  technician filter picks them up automatically.
-- **Projects, PMs, downtime cost:** add a collection in `lib/store.js`, a
-  route in `server.js`, a card in `public/` — each layer is a small plain
-  file.
-- **Real database:** `lib/store.js` is the only file that knows data lives
-  in JSON; port those functions to SQLite/Postgres when the team outgrows a
-  file.
+Environment: `PORT`, `DATA_DIR`, `TZ`, `INGEST_TOKEN`, `SECURE_COOKIES`,
+`TRUST_PROXY`. See [docs/going-online.md](docs/going-online.md).

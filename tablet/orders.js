@@ -9,7 +9,9 @@ import { openLogForm } from './logform.js';
 import { openPartForm } from './parts.js';
 
 const PRIORITY_RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
-const filters = { status: 'active', q: '', machineId: '', assignedTo: '', priority: '' };
+// 'recent' (default): anything touched in the last 7 days, open or done, so
+// what you just logged on Today is always right here.
+const filters = { status: 'recent', q: '', machineId: '', assignedTo: '', priority: '' };
 
 export async function renderOrders(root) {
   // Arriving from the Schedule page's workload table pre-filters by person.
@@ -32,20 +34,28 @@ export async function renderOrders(root) {
   }
 
   const today = localDate();
+  // Latest activity per order: its own changes or any entry logged on it.
+  const lastActivity = new Map(orders.map((w) => [w.id, w.updatedAt || w.createdAt]));
+  for (const l of logs) {
+    if (l.workOrderId && lastActivity.has(l.workOrderId) && l.createdAt > lastActivity.get(l.workOrderId)) lastActivity.set(l.workOrderId, l.createdAt);
+  }
+  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
   const match = (w) => {
+    if (filters.status === 'recent' && lastActivity.get(w.id) < weekAgo) return false;
     if (filters.status === 'active' && ['completed', 'cancelled'].includes(w.status)) return false;
     if (filters.status === 'overdue' && (!w.dueDate || w.dueDate >= today || ['completed', 'cancelled'].includes(w.status))) return false;
-    if (!['active', 'all', 'overdue'].includes(filters.status) && w.status !== filters.status) return false;
+    if (!['recent', 'active', 'all', 'overdue'].includes(filters.status) && w.status !== filters.status) return false;
     if (filters.machineId && w.machineId !== filters.machineId) return false;
     if (filters.assignedTo === '__none' ? w.assignedTo : (filters.assignedTo && w.assignedTo !== filters.assignedTo)) return false;
     if (filters.priority && w.priority !== filters.priority) return false;
     if (filters.q) {
-      const hay = [w.title, w.description, w.orderNumber, 'm-' + w.ref, machineName(w.machineId), w.assignedTo].join(' ').toLowerCase();
+      const hay = [w.title, w.description, w.orderNumber, woLabel(w), machineName(w.machineId), w.assignedTo].join(' ').toLowerCase();
       if (!filters.q.toLowerCase().split(/\s+/).every((t) => hay.includes(t))) return false;
     }
     return true;
   };
   const list = orders.filter(match).sort((a, b) => {
+    if (filters.status === 'recent') return lastActivity.get(b.id).localeCompare(lastActivity.get(a.id));
     const closedA = ['completed', 'cancelled'].includes(a.status), closedB = ['completed', 'cancelled'].includes(b.status);
     if (closedA !== closedB) return closedA ? 1 : -1;
     if (closedA) return String(b.completedAt || b.updatedAt).localeCompare(String(a.completedAt || a.updatedAt));
@@ -55,6 +65,7 @@ export async function renderOrders(root) {
   });
 
   const counts = {
+    recent: orders.filter((w) => lastActivity.get(w.id) >= weekAgo).length,
     active: orders.filter((w) => !['completed', 'cancelled'].includes(w.status)).length,
     open: orders.filter((w) => w.status === 'open').length,
     in_progress: orders.filter((w) => w.status === 'in_progress').length,
@@ -62,7 +73,7 @@ export async function renderOrders(root) {
     overdue: orders.filter((w) => w.dueDate && w.dueDate < today && !['completed', 'cancelled'].includes(w.status)).length,
   };
   const statusTabs = [
-    ['active', `All open (${counts.active})`], ['open', `Not started (${counts.open})`],
+    ['recent', `Recent (${counts.recent})`], ['active', `All open (${counts.active})`], ['open', `Not started (${counts.open})`],
     ['in_progress', `In progress (${counts.in_progress})`], ['waiting_parts', `Waiting parts (${counts.waiting_parts})`],
     ['overdue', `Overdue (${counts.overdue})`], ['completed', 'Completed'], ['all', 'Everything'],
   ];
@@ -76,7 +87,7 @@ export async function renderOrders(root) {
   const techs = [...new Set([...state.users.map((u) => u.name), ...state.technicians])];
 
   const table = list.length ? el('table', { class: 'data orders' }, [
-    el('thead', {}, el('tr', {}, ['Ref', 'Machine', 'Job', 'Priority', 'Status', 'Assigned', 'Due', 'Opened', 'Time', 'Parts']
+    el('thead', {}, el('tr', {}, ['WO #', 'Machine', 'Job', 'Priority', 'Status', 'Assigned', 'Due', 'Opened', 'Time', 'Parts']
       .map((h, i) => el('th', { class: [i === 8 || i === 9 ? 'num' : '', i === 7 || i === 9 ? 'hide-sm' : ''].join(' ') }, h)))),
     el('tbody', {}, list.map((w) => el('tr', { class: 'clickable', onclick: () => openWorkOrder(w.id, refresh) }, [
       el('td', { class: 'nowrap' }, woLabel(w)),

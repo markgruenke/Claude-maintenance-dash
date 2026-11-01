@@ -116,9 +116,12 @@ export function machineName(id) {
   return m ? m.name : '';
 }
 
+/** Company WO# if known, else the order's own WO_NN_### number (same rule as lib/store.js). */
 export function woLabel(wo) {
   if (!wo) return '';
-  return wo.orderNumber ? `WO#${wo.orderNumber}` : `M-${wo.ref}`;
+  if (wo.orderNumber) return `WO#${wo.orderNumber}`;
+  if (wo.nn) return `WO_NN_${String(wo.nn).padStart(3, '0')}`;
+  return `M-${wo.ref}`;
 }
 
 export function badge(kind, text) {

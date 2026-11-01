@@ -57,6 +57,7 @@ test('v1 data is upgraded: orders get a reference number', async () => {
   const orders = await sup('GET', '/api/work-orders');
   assert.equal(orders.data[0].ref, 1);
   assert.deepEqual(orders.data[0].history, []);
+  assert.equal(orders.data[0].nn ?? null, null); // has a company WO#, so no NN number
 });
 
 test('everything needs a sign-in, and setup only happens once', async () => {
@@ -148,7 +149,33 @@ test('voice entry: one sentence becomes a logged entry; resends are ignored; und
   // No time said: still logged, just with no minutes.
   const noTime = await tech('POST', '/api/ingest/notes', { text: 'cleaned up around the shop', date: '2026-11-01', clientId: 'v-3' });
   assert.equal(noTime.data.log.minutes, 0);
-  assert.equal(noTime.data.workOrder, null);
+  // …and, like every Today entry, it still gets a work order of its own.
+  assert.ok(noTime.data.workOrder);
+  assert.equal(noTime.data.workOrder.status, 'completed');
+});
+
+test('orders with no company WO# are numbered WO_NN_001, 002…; Undo frees the number', async () => {
+  const store = require('../lib/store');
+  const say = (text, clientId) => tech('POST', '/api/ingest/notes', { text, date: '2026-11-04', clientId });
+  const a = await say('Lathe 7 cleaned the chip tray', 'n-1');
+  const b = await say('Mill 9 squared the vise', 'n-2');
+  const na = a.data.workOrder.nn;
+  assert.ok(na >= 1);
+  assert.equal(b.data.workOrder.nn, na + 1);
+  assert.equal(store.woLabel(b.data.workOrder), `WO_NN_${String(na + 1).padStart(3, '0')}`);
+  // A company WO# means no NN number; that order shows its own number.
+  const c = await say('work order 55501 Saw 3 new blade', 'n-3');
+  assert.equal(c.data.workOrder.nn, null);
+  assert.equal(store.woLabel(c.data.workOrder), 'WO#55501');
+  // Undo the newest no-number entry: its number is reused next time.
+  const d = await say('Grinder 2 dressed the wheel', 'n-4');
+  assert.equal(d.data.workOrder.nn, na + 2);
+  await tech('DELETE', '/api/work-logs/' + d.data.log.id);
+  const e = await say('Grinder 2 dressed the wheel properly', 'n-5');
+  assert.equal(e.data.workOrder.nn, na + 2);
+  // Every Today entry is on an order, so it shows in Work Orders.
+  const orders = (await sup('GET', '/api/work-orders')).data;
+  for (const r of [a, b, c, e]) assert.ok(orders.some((w) => w.id === r.data.workOrder.id));
 });
 
 test('spoken phrasing: times, machine names and status', () => {

@@ -25,7 +25,7 @@ const __modules = {
  * time zone the server runs in. Timestamps (createdAt etc.) are ISO UTC.
  */
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const EMPTY_DB = {
   users: [],         // { id, name, role, salt, hash, active, createdAt }
@@ -43,7 +43,7 @@ const EMPTY_DB = {
                      //   lastDoneDate, assignedTo, priority, active, createdAt, updatedAt }
   reportNotes: {},   // { [periodKey]: { text, by, updatedAt } }
   technicians: [],   // legacy name list from v1 (names now come from users + work logs)
-  meta: { schemaVersion: SCHEMA_VERSION, nextRef: 1 },
+  meta: { schemaVersion: SCHEMA_VERSION, nextRef: 1, nextNN: 1 },
 };
 
 const WORK_ORDER_STATUSES = ['open', 'in_progress', 'waiting_parts', 'completed', 'cancelled'];
@@ -108,6 +108,16 @@ function migrate(d) {
       if (!('running' in log)) log.running = false;
     }
     d.meta.schemaVersion = 2;
+  }
+  if (d.meta.schemaVersion < 3) {
+    // v2 -> v3: orders with no company WO# get their own number,
+    // WO_NN_001, WO_NN_002… in the order they were created.
+    let nn = 1;
+    for (const wo of [...d.workOrders].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
+      if (!wo.orderNumber && !wo.nn) wo.nn = nn++;
+    }
+    d.meta.nextNN = Math.max(nn, d.meta.nextNN || 1);
+    d.meta.schemaVersion = 3;
   }
   return d;
 }
@@ -202,6 +212,7 @@ function replaceWorkData(src) {
   for (const k of ['machines', 'workOrders', 'workLogs', 'parts', 'pmSchedules', 'technicians']) d[k] = incoming[k] || [];
   d.reportNotes = incoming.reportNotes || {};
   d.meta.nextRef = Math.max(incoming.meta.nextRef || 1, ...d.workOrders.map((w) => (w.ref || 0) + 1), 1);
+  d.meta.nextNN = Math.max(incoming.meta.nextNN || 1, ...d.workOrders.map((w) => (w.nn || 0) + 1), 1);
   if (incoming.meta.ownerName && !d.meta.ownerName) d.meta.ownerName = incoming.meta.ownerName;
   saveNow();
   return { machines: d.machines.length, workOrders: d.workOrders.length, workLogs: d.workLogs.length, parts: d.parts.length };
@@ -347,12 +358,25 @@ function findWorkOrderByNumber(orderNumber) {
   return load().workOrders.find((w) => String(w.orderNumber).trim().toLowerCase() === norm) || null;
 }
 
+/**
+ * Display number for an order: the company WO# when there is one, otherwise
+ * its own "no number" number, WO_NN_001, WO_NN_002, …
+ */
+function woLabel(wo) {
+  if (!wo) return '';
+  if (wo.orderNumber) return `WO#${wo.orderNumber}`;
+  if (wo.nn) return `WO_NN_${String(wo.nn).padStart(3, '0')}`;
+  return `M-${wo.ref}`;
+}
+
 function createWorkOrder(fields, by = '') {
   const d = load();
+  const orderNumber = String(fields.orderNumber || '').trim();
   const wo = {
     id: id(),
     ref: d.meta.nextRef++,
-    orderNumber: String(fields.orderNumber || '').trim(),
+    nn: orderNumber ? null : d.meta.nextNN++,
+    orderNumber,
     machineId: fields.machineId || null,
     title: String(fields.title || '').trim() || 'Untitled work order',
     description: fields.description || '',
@@ -402,6 +426,8 @@ function updateWorkOrder(woId, fields, by = '') {
     if (key !== 'completedAt') changes.push(describeChange(key, wo[key], v));
     wo[key] = v;
   }
+  // Company WO# removed from an order that never had its own number: give it one.
+  if (!wo.orderNumber && !wo.nn) wo.nn = load().meta.nextNN++;
   if (wo.status === 'completed' && !wo.completedAt) wo.completedAt = now();
   if (wo.status !== 'completed' && 'status' in fields && !('completedAt' in fields)) wo.completedAt = null;
   if (changes.length) {
@@ -427,7 +453,10 @@ function deleteWorkOrder(woId) {
   const d = load();
   const idx = d.workOrders.findIndex((w) => w.id === woId);
   if (idx < 0) return false;
-  d.workOrders.splice(idx, 1);
+  const [gone] = d.workOrders.splice(idx, 1);
+  // Undoing the newest no-number order frees its number, so an Undo right
+  // after logging doesn't leave a gap (002 deleted -> next is 002 again).
+  if (gone.nn && gone.nn === d.meta.nextNN - 1) d.meta.nextNN--;
   // Keep the time and parts history; just detach it from the deleted order.
   for (const l of d.workLogs) if (l.workOrderId === woId) l.workOrderId = null;
   for (const p of d.parts) if (p.workOrderId === woId) p.workOrderId = null;
@@ -679,7 +708,7 @@ module.exports = {
   listUsers, findUser, findUserByName, createUser, updateUser, publicUser,
   createSession, findSession, touchSession, deleteSessions,
   listMachines, findMachine, resolveMachine, createMachine, updateMachine,
-  listWorkOrders, findWorkOrder, findWorkOrderByNumber, createWorkOrder, updateWorkOrder,
+  woLabel, listWorkOrders, findWorkOrder, findWorkOrderByNumber, createWorkOrder, updateWorkOrder,
   addWorkOrderNote, deleteWorkOrder,
   listWorkLogs, findWorkLog, findWorkLogByClientId, createWorkLog, updateWorkLog, deleteWorkLog,
   listParts, findPart, createPart, updatePart, deletePart,
@@ -1234,10 +1263,7 @@ function fmtDay(dateStr, withYear = false) {
   });
 }
 
-function woLabel(wo) {
-  if (!wo) return '';
-  return wo.orderNumber ? `WO#${wo.orderNumber}` : `M-${wo.ref}`;
-}
+const woLabel = (wo) => store.woLabel(wo);
 
 function machineName(id) {
   const m = id ? store.findMachine(id) : null;
@@ -1415,7 +1441,7 @@ function dailyText(r) {
       lines.push(`— ${fmtDay(e.date)} —`);
       lastDate = e.date;
     }
-    const head = [e.clock, e.machineName || 'General', e.minutes ? fmtHours(e.minutes) : '', e.orderNumber ? 'WO#' + e.orderNumber : '']
+    const head = [e.clock, e.machineName || 'General', e.minutes ? fmtHours(e.minutes) : '', e.workOrderLabel]
       .filter(Boolean).join(' — ');
     lines.push(`${i + 1}. ${head}${!r.technician && e.technician ? ` (${e.technician})` : ''}`);
     if (e.notes) lines.push(wrapNote(e.notes));
@@ -1697,7 +1723,11 @@ function titleFrom(text, fallback) {
   // Safari can't parse it, and this code also runs on the tablet.)
   const line = String(text || '').split('\n')[0];
   const m = line.match(/^(.*?[.!?])(?:\s|$)/);
-  const first = (m ? m[1] : line).replace(/[.!?]+$/, '').trim();
+  let first = (m ? m[1] : line).replace(/[.!?]+$/, '').trim();
+  // Spoken entries are one long sentence: the part before the first comma
+  // usually says what the job was ("Press 2 replaced the hydraulic hose").
+  const clause = first.split(/,\s*/)[0].trim();
+  if (clause.length >= 12) first = clause;
   if (!first) return fallback;
   if (first.length <= 70) return first.charAt(0).toUpperCase() + first.slice(1);
   const cut = first.slice(0, 70);
@@ -1731,11 +1761,13 @@ function commitWork(body, user) {
     workOrder = matchOpenJob(machine, String(body.notes || ''));
   }
   const notes = String(body.notes || '').trim();
-  if (!workOrder && (machine || body.newOrderTitle || orderNumber)) {
+  // Entries from Today (alwaysJob) always end up on a work order, so they
+  // show in Work Orders; no company WO# means it gets its own WO_NN_### number.
+  if (!workOrder && (body.alwaysJob || machine || body.newOrderTitle || orderNumber)) {
     workOrder = store.createWorkOrder({
       machineId: machine ? machine.id : null,
       orderNumber,
-      title: String(body.newOrderTitle || '').trim() || titleFrom(notes, 'Work on ' + (machine ? machine.name : 'equipment')),
+      title: String(body.newOrderTitle || '').trim() || titleFrom(notes, machine ? 'Work on ' + machine.name : 'General work'),
       description: notes,
       priority: body.priority,
       source: body.source || 'tablet',
@@ -2135,6 +2167,7 @@ async function handle({ method, seg, query, body = {}, user }) {
         machineName: o.machineName ?? parsed.machineName,
         orderNumber: o.orderNumber ?? parsed.orderNumber,
         attachToOpen: true,
+        alwaysJob: true,
         minutes: o.minutes ?? parsed.minutes ?? 0,
         notes: parsed.notes,
         partsUsed: o.partsUsed ?? parsed.partsUsed,

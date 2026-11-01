@@ -71,7 +71,7 @@ function dailyView(r, period, refresh) {
   const entries = r.entries;
   const entered = entries.filter((e) => e.entered).length;
   const entryText = (e) => [
-    [e.clock, e.machineName, e.minutes ? fmtHours(e.minutes) : '', e.orderNumber ? 'WO#' + e.orderNumber : ''].filter(Boolean).join(' — '),
+    [e.clock, e.machineName, e.minutes ? fmtHours(e.minutes) : '', e.workOrderLabel].filter(Boolean).join(' — '),
     e.notes,
     e.partsUsed.length ? 'Parts used: ' + e.partsUsed.join(', ') : '',
     e.partsNeeded.length ? 'Parts needed: ' + e.partsNeeded.join(', ') : '',
@@ -93,7 +93,7 @@ function dailyView(r, period, refresh) {
         },
       })),
       el('td', { class: 'nowrap' }, e.clock),
-      el('td', {}, [e.machineName || '—', e.orderNumber ? el('div', { class: 'muted small' }, 'WO#' + e.orderNumber) : null]),
+      el('td', {}, [e.machineName || '—', e.workOrderLabel ? el('div', { class: 'muted small' }, e.workOrderLabel) : null]),
       el('td', {}, [
         el('div', { class: 'pre' }, e.notes),
         e.partsUsed.length ? el('div', { class: 'muted small' }, 'Used: ' + e.partsUsed.join(', ')) : null,

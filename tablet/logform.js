@@ -94,7 +94,7 @@ export async function openLogForm(o = {}) {
       if (presetWo && !relevant.some((w) => w.id === presetWo.id)) opts.unshift([presetWo.id, `${woLabel(presetWo)} — ${presetWo.title} (${statusText(presetWo.status)})`]);
       jobSelect.replaceChildren(...opts.map(([v, t]) => el('option', { value: v }, t)));
       if (keep !== undefined && opts.some(([v]) => v === keep)) jobSelect.value = keep;
-      else jobSelect.value = relevant.length ? relevant[0].id : (mName ? '__new' : '');
+      else jobSelect.value = relevant.length ? relevant[0].id : (mode === 'edit' ? '' : '__new');
       newJobBox.style.display = jobSelect.value === '__new' ? '' : 'none';
     };
     const onMachineChange = () => { fillJobs(); drawChips(); };

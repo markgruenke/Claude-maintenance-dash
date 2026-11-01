@@ -81,3 +81,23 @@ test('engine runs with no Node modules: log by voice, report, export, restore', 
   r = await engine.request('GET', '/api/nope');
   assert.equal(r.status, 404);
 });
+
+test('data saved by the previous version gets WO_NN numbers on upgrade', () => {
+  const store = require('../lib/store');
+  const v2 = {
+    machines: [], workLogs: [], parts: [], pmSchedules: [],
+    workOrders: [
+      { id: 'b', ref: 2, orderNumber: '', title: 'second', status: 'completed', createdAt: '2026-11-01T10:00:00Z', history: [] },
+      { id: 'a', ref: 1, orderNumber: '', title: 'first', status: 'open', createdAt: '2026-11-01T09:00:00Z', history: [] },
+      { id: 'c', ref: 3, orderNumber: '10288', title: 'company', status: 'open', createdAt: '2026-11-01T11:00:00Z', history: [] },
+    ],
+    meta: { schemaVersion: 2, nextRef: 4, ownerName: 'Mark' },
+  };
+  let saved = JSON.stringify(v2);
+  store.setBackend({ read: () => saved, write: (j) => { saved = j; } });
+  const labels = Object.fromEntries(store.listWorkOrders().map((w) => [w.id, store.woLabel(w)]));
+  assert.deepEqual(labels, { a: 'WO_NN_001', b: 'WO_NN_002', c: 'WO#10288' });
+  const next = store.createWorkOrder({ title: 'new one' });
+  assert.equal(store.woLabel(next), 'WO_NN_003');
+  assert.equal(store.load().meta.ownerName, 'Mark');
+});

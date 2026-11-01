@@ -170,6 +170,11 @@ test('spoken phrasing: times, machine names and status', () => {
   assert.equal(parseNotes('press 2 waiting on parts to come in', known).statusHint, 'waiting_parts');
   assert.equal(parseNotes('work order 10288 on press 2', known).orderNumber, '10288');
   assert.deepEqual(parseNotes('replaced the belt and tested it', known).partsUsed, ['belt']);
+  // A "need" clause after a comma isn't part of what was used.
+  const hose = parseNotes('Press 2 replaced the hydraulic hose, need a seal kit and a pump, about an hour', known);
+  assert.deepEqual(hose.partsUsed, ['hydraulic hose']);
+  assert.deepEqual(hose.partsNeeded, ['seal kit', 'pump']);
+  assert.deepEqual(parseNotes('swapped the fuse, still waiting on a contactor', known).partsUsed, ['fuse']);
 });
 
 test('weekend report buckets work and parts correctly', async () => {
@@ -236,4 +241,42 @@ test('restore from a backup replaces work data but keeps accounts', async () => 
   assert.equal(r.data.counts.workLogs, before);
   assert.equal((await sup('GET', '/api/work-logs')).data.length, before);
   assert.equal((await tech('GET', '/api/auth/status')).data.user.name, 'Dave'); // still signed in
+});
+
+test('editing an entry corrects its parts and the job status', async () => {
+  const r = await tech('POST', '/api/ingest/notes', {
+    text: 'Conveyor B replaced the drive chain, need a sprocket and a guard rail', date: '2026-11-02', clientId: 'e-1',
+  });
+  const logId = r.data.log.id;
+  const woId = r.data.workOrder.id;
+  assert.equal(r.data.workOrder.status, 'waiting_parts');
+  const partsOf = async () => (await sup('GET', '/api/parts')).data.filter((p) => p.logId === logId);
+  const names = (list, used) => list.filter((p) => (p.status === 'installed') === used).map((p) => `${p.quantity}x ${p.name}`).sort();
+  assert.deepEqual(names(await partsOf(), false), ['1x guard rail', '1x sprocket']);
+
+  // The sprocket was already ordered; that progress must survive the edit.
+  const sprocket = (await partsOf()).find((p) => p.name === 'sprocket');
+  await sup('PATCH', '/api/parts/' + sprocket.id, { status: 'ordered' });
+
+  // Misheard: no guard rail, it was 2 sprockets, and a master link was used too.
+  const e = await tech('PATCH', '/api/work-logs/' + logId, {
+    partsUsed: [{ name: 'drive chain' }, { name: 'master link' }],
+    partsNeeded: [{ name: 'sprocket', quantity: 2 }],
+  });
+  assert.equal(e.status, 200);
+  const after = await partsOf();
+  assert.deepEqual(names(after, true), ['1x drive chain', '1x master link']);
+  assert.deepEqual(names(after, false), ['2x sprocket']);
+  assert.equal(after.find((p) => p.name === 'sprocket').status, 'ordered');
+  assert.equal(after.find((p) => p.name === 'sprocket').id, sprocket.id);
+
+  // Nothing needed after all: clear it and set the job done.
+  await tech('PATCH', '/api/work-logs/' + logId, { partsNeeded: [], statusAfter: 'completed' });
+  assert.deepEqual(names(await partsOf(), false), []);
+  const wo = (await sup('GET', '/api/work-orders/' + woId)).data.workOrder;
+  assert.equal(wo.status, 'completed');
+
+  // An edit that leaves parts out entirely doesn't touch them.
+  await tech('PATCH', '/api/work-logs/' + logId, { notes: 'Conveyor B replaced the drive chain' });
+  assert.deepEqual(names(await partsOf(), true), ['1x drive chain', '1x master link']);
 });

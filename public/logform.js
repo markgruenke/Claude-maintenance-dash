@@ -43,7 +43,18 @@ export async function openLogForm(o = {}) {
   let openOrders = [];
   try { openOrders = await api('/api/work-orders?status=open'); } catch (err) { toast(err.message); }
 
-  const presetWo = o.workOrder || (log && log.workOrderId ? openOrders.find((w) => w.id === log.workOrderId) : null);
+  let presetWo = o.workOrder || (log && log.workOrderId ? openOrders.find((w) => w.id === log.workOrderId) : null);
+  // Editing an entry whose job is already finished: that job isn't in the
+  // open list, but the entry must stay attached to it.
+  if (!presetWo && log && log.workOrderId) {
+    try { presetWo = (await api('/api/work-orders/' + log.workOrderId)).workOrder; } catch { /* job was deleted */ }
+  }
+  // Parts this entry recorded (so they can be corrected).
+  let entryParts = [];
+  if (mode === 'edit' && log) {
+    try { entryParts = (await api('/api/parts')).filter((p) => p.logId === log.id); } catch (err) { toast(err.message); }
+  }
+  const partText = (list) => list.map((p) => (p.quantity > 1 ? `${p.quantity}x ` : '') + p.name).join(', ');
   const initialMachine = presetWo ? machineName(presetWo.machineId) : (log ? machineName(log.machineId) : '');
 
   const title = { log: 'Log work', edit: 'Edit entry' }[mode];
@@ -76,11 +87,11 @@ export async function openLogForm(o = {}) {
       const relevant = openOrders.filter((w) => !mName || (m && w.machineId === m.id));
       const opts = [
         ...relevant.map((w) => [w.id, `${woLabel(w)} — ${w.title} (${statusText(w.status)})`]),
-        ['__new', '+ New job'],
+        ...(mode === 'edit' ? [] : [['__new', '+ New job']]),
         ['', 'No work order (general / misc work)'],
       ];
       // Keep the preset order selectable even if the machine was changed.
-      if (presetWo && !relevant.includes(presetWo)) opts.unshift([presetWo.id, `${woLabel(presetWo)} — ${presetWo.title}`]);
+      if (presetWo && !relevant.some((w) => w.id === presetWo.id)) opts.unshift([presetWo.id, `${woLabel(presetWo)} — ${presetWo.title} (${statusText(presetWo.status)})`]);
       jobSelect.replaceChildren(...opts.map(([v, t]) => el('option', { value: v }, t)));
       if (keep !== undefined && opts.some(([v]) => v === keep)) jobSelect.value = keep;
       else jobSelect.value = relevant.length ? relevant[0].id : (mName ? '__new' : '');
@@ -114,12 +125,28 @@ export async function openLogForm(o = {}) {
     drawTime();
 
     // ---- result + parts
-    const result = segmented(RESULTS, mode === 'edit' ? null : 'completed');
+    const initialStatus = mode === 'edit' ? (presetWo ? presetWo.status : null) : 'completed';
+    const result = segmented(RESULTS, initialStatus);
     const partsUsed = el('input', { placeholder: 'e.g. drive belt, 2x bearing', class: 'big' });
     const partsNeeded = el('input', { placeholder: 'e.g. coolant pump, 4x filter', class: 'big' });
+    if (mode === 'edit') {
+      partsUsed.value = partText(entryParts.filter((p) => p.status === 'installed'));
+      partsNeeded.value = partText(entryParts.filter((p) => p.status !== 'installed'));
+    }
+    let hadNeeded = !!partsNeeded.value.trim();
     partsNeeded.addEventListener('input', () => {
-      if (partsNeeded.value.trim() && result.value !== 'waiting_parts') result.value = 'waiting_parts';
+      const hasNeeded = !!partsNeeded.value.trim();
+      if (hasNeeded && result.value !== 'waiting_parts') result.value = 'waiting_parts';
+      // Cleared the only reason it was waiting: it's not waiting on parts any more.
+      if (!hasNeeded && hadNeeded && result.value === 'waiting_parts') result.value = 'in_progress';
+      hadNeeded = hasNeeded;
     });
+    // Parts that already moved along (ordered / received) say so, so it's
+    // clear what editing them affects.
+    const progressed = entryParts.filter((p) => ['ordered', 'received'].includes(p.status));
+    const neededHint = mode === 'edit'
+      ? (progressed.length ? `Already ${progressed.map((p) => `${p.name}: ${p.status}`).join(', ')}. Removing a part here deletes it from the parts list.` : 'Removing a part here deletes it from the parts list.')
+      : 'Added to the parts list';
 
     // ---- who/when
     const date = el('input', { type: 'date', value: (log && log.date) || o.date || localDate() });
@@ -166,7 +193,13 @@ export async function openLogForm(o = {}) {
         let out;
         if (mode === 'log') out = await api('/api/work-logs', { method: 'POST', body, queue: true });
         else {
-          const patch = { date: body.date, machineName: body.machineName, notes: body.notes, minutes: body.minutes, workOrderId: job && job !== '__new' ? job : null };
+          const patch = {
+            date: body.date, machineName: body.machineName, notes: body.notes, minutes: body.minutes,
+            workOrderId: job && job !== '__new' ? job : null,
+            partsUsed: parsePartList(partsUsed.value),
+            partsNeeded: parsePartList(partsNeeded.value),
+          };
+          if (patch.workOrderId && result.value && result.value !== initialStatus) patch.statusAfter = result.value;
           if (tech) patch.technician = body.technician;
           out = await api(`/api/work-logs/${log.id}`, { method: 'PATCH', body: patch });
         }
@@ -197,10 +230,12 @@ export async function openLogForm(o = {}) {
         el('span', { class: 'fld-label' }, 'Time spent (optional)'),
         el('div', { class: 'time-row' }, [timeChips, el('span', { class: 'or' }, 'or'), minutesInput, el('span', { class: 'muted' }, 'min')]),
       ]),
-      mode === 'log' ? el('div', { class: 'fld' }, [el('span', { class: 'fld-label' }, 'Where does it stand?'), result.node]) : null,
-      mode === 'log' ? el('div', { class: 'row2' }, [
-        field('Parts used', partsUsed, 'Separate with commas'),
-        field('Parts needed', partsNeeded, 'Added to the parts list'),
+      el('div', { class: 'row2' }, [
+        field('Parts used', partsUsed, 'Separate with commas, e.g. 2x bearing'),
+        field('Parts needed', partsNeeded, neededHint),
+      ]),
+      (mode === 'log' || presetWo) ? el('div', { class: 'fld' }, [
+        el('span', { class: 'fld-label' }, mode === 'edit' ? 'Where does the job stand?' : 'Where does it stand?'), result.node,
       ]) : null,
       el('div', { class: 'row2' }, [field('Date', date), tech ? field('Technician', tech, 'Supervisors can log for anyone') : el('span')]),
       el('div', { class: 'row-end sticky' }, [el('button', { class: 'ghost big', type: 'button', onclick: close }, 'Cancel'), saveBtn]),

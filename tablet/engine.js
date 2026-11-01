@@ -849,7 +849,8 @@ const NOT_A_PART = new Set(('to it its it\'s then i i\'m we he she they everythi
   'adjusted tightened ran reset cleared verified greased lubed started restarted put got went made did was is are ' +
   'will should back all that this there which so but when while after before because if as up out more some more ' +
   'look looked help him her them me you my our your about around roughly maybe probably took spent half ' +
-  'like just pretty really also yeah okay ok um uh').split(' '));
+  'like just pretty really also yeah okay ok um uh need needs needed waiting order ordering ordered gotta ' +
+  'have has had going gonna got still should would could').split(' '));
 const TIME_WORDS = /\b(?:hours?|hrs?|minutes?|mins?|half|today|yesterday|tonight|morning|afternoon)\b/i;
 
 /** Split "bearings and a drive belt", "seal, gasket and hose" into part names. */
@@ -1765,6 +1766,39 @@ function commitWork(body, user) {
 }
 
 /**
+ * Make an entry's parts match corrected lists (from the Edit screen).
+ * "Used" = installed parts; "needed" = anything not installed yet (needed,
+ * ordered, received). Parts that are still listed keep their record and
+ * progress (an "ordered" part stays ordered); removed ones are deleted; new
+ * ones are added. Undefined list = leave that side alone.
+ */
+function replaceLogParts(log, usedList, neededList, user) {
+  const key = (n) => store.normalizeName(n);
+  const sync = (list, mine, newStatus) => {
+    if (list === undefined) return;
+    const wanted = partNames(list);
+    const pool = [...mine];
+    for (const w of wanted) {
+      const i = pool.findIndex((p) => key(p.name) === key(w.name));
+      if (i >= 0) {
+        const [match] = pool.splice(i, 1);
+        if (match.quantity !== w.quantity) store.updatePart(match.id, { quantity: w.quantity });
+      } else {
+        store.createPart({
+          ...w, machineId: log.machineId, workOrderId: log.workOrderId, logId: log.id,
+          requestedBy: log.technician || user.name, status: newStatus,
+          notes: (newStatus === 'installed' ? 'used ' : 'requested ') + log.date,
+        });
+      }
+    }
+    for (const leftover of pool) store.deletePart(leftover.id);
+  };
+  const parts = store.listParts().filter((p) => p.logId === log.id);
+  sync(usedList, parts.filter((p) => p.status === 'installed'), 'installed');
+  sync(neededList, parts.filter((p) => p.status !== 'installed'), 'needed');
+}
+
+/**
  * Remove an entry and whatever it created on its own: its parts, and the
  * job it opened if nothing else has been logged against that job since.
  * (So "Undo" after a mis-heard voice entry leaves no trace.)
@@ -1973,7 +2007,26 @@ async function handle({ method, seg, query, body = {}, user }) {
         const m = resolveMachineFromBody({ machineName: patch.machineName });
         patch.machineId = m ? m.id : null;
       }
-      return reply(200, store.updateWorkLog(log.id, patch));
+      const hasParts = 'partsUsed' in patch || 'partsNeeded' in patch;
+      const statusAfter = patch.statusAfter;
+      const partsUsed = patch.partsUsed;
+      const partsNeeded = patch.partsNeeded;
+      delete patch.partsUsed; delete patch.partsNeeded; delete patch.statusAfter;
+      const updated = store.updateWorkLog(log.id, patch);
+      // Parts follow the entry if it was moved to another job or machine.
+      for (const p of store.listParts().filter((x) => x.logId === log.id)) {
+        if (p.workOrderId !== updated.workOrderId || p.machineId !== updated.machineId) {
+          store.updatePart(p.id, { workOrderId: updated.workOrderId, machineId: updated.machineId });
+        }
+      }
+      if (hasParts) {
+        replaceLogParts(updated, partsUsed, partsNeeded, user);
+      }
+      const wo = updated.workOrderId ? store.findWorkOrder(updated.workOrderId) : null;
+      if (wo && store.WORK_ORDER_STATUSES.includes(statusAfter) && statusAfter !== wo.status) {
+        changeWorkOrder(wo, { status: statusAfter }, user.name);
+      }
+      return reply(200, updated);
     }
   }
 

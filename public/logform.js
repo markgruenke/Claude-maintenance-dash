@@ -6,7 +6,7 @@
    required field ("what was done"). */
 
 import {
-  el, api, toast, state, isSupervisor, openModal, field, select, segmented,
+  el, api, toast, state, isSupervisor, isShared, openModal, field, select, segmented,
   machineName, woLabel, localDate, parsePartList, uid, statusText,
 } from './core.js';
 
@@ -22,8 +22,11 @@ function rememberMachine(name) {
   try { localStorage.setItem('mt_recent_machines', JSON.stringify(list)); } catch { /* ignore */ }
 }
 
+/** Supervisors on the shared system can log work for someone else. */
+export const canLogForOthers = () => isSupervisor() && isShared();
+
 export function currentWorker() {
-  try { return (isSupervisor() && localStorage.getItem('mt_worker')) || state.me.name; } catch { return state.me.name; }
+  try { return (canLogForOthers() && localStorage.getItem('mt_worker')) || state.me.name; } catch { return state.me.name; }
 }
 
 /**
@@ -120,7 +123,7 @@ export async function openLogForm(o = {}) {
 
     // ---- who/when
     const date = el('input', { type: 'date', value: (log && log.date) || o.date || localDate() });
-    const tech = isSupervisor()
+    const tech = canLogForOthers()
       ? el('input', { list: 'tech-list', value: log ? log.technician : currentWorker() })
       : null;
 
@@ -210,7 +213,7 @@ export function openNotesForm({ onDone, date } = {}) {
   openModal('Log from notes', (close) => {
     const text = el('textarea', { rows: 6, class: 'big', placeholder: 'Example: Spent 2 hrs on CNC 3, replaced the spindle belt. Still need to order a coolant pump.' });
     const dateIn = el('input', { type: 'date', value: date || localDate() });
-    const tech = isSupervisor() ? el('input', { list: 'tech-list', value: currentWorker() }) : null;
+    const tech = canLogForOthers() ? el('input', { list: 'tech-list', value: currentWorker() }) : null;
     const preview = el('div');
     const saveBtn = el('button', { class: 'primary big', disabled: true }, 'Save entry');
 

@@ -18,7 +18,18 @@ department on one shared system.
 **Zero dependencies.** Plain Node.js, no `npm install`, no database server.
 Data lives in `data/db.json`, with automatic daily copies in `data/backups/`.
 
-## Quick start
+## Two ways to run it
+
+- **Tablet only** (no server, no IT approval needed): everything runs in the
+  tablet's browser and your data stays on the tablet. See
+  [docs/tablet-app.md](docs/tablet-app.md).
+- **Shared server** (the multi-person system): one PC runs `node server.js`,
+  everyone signs in from tablets/PCs. Instructions below.
+
+Both use the same code (`lib/`, `public/`), and a backup from the tablet can
+be loaded into the server later.
+
+## Quick start (server)
 
 ```bash
 node server.js
@@ -121,7 +132,11 @@ lib/analytics.js     per-machine stats, trends, attention flags (FLAG_RULES)
 public/              the app (vanilla JS modules, no build step)
 scripts/seed.js      demo data in / out
 scripts/email-poller.js  optional IMAP watcher (needs npm packages)
-test/                API tests (node --test)
+lib/api.js           the API logic, shared by server and tablet
+scripts/build-tablet.js  builds tablet/ (the no-server tablet app)
+tablet/              generated tablet app (static files, host anywhere)
+public/local/        tablet-only pieces: engine glue, boot, service worker
+test/                API + tablet tests (node --test)
 docs/                Windows setup, no-admin Node, email, going online
 ```
 
@@ -139,7 +154,7 @@ docs/                Windows setup, no-admin Node, email, going online
 | `GET/POST /api/users`, `PATCH /api/users/:id` | people (supervisor) |
 | `POST /api/ingest/email` | work order from an email; also accepts `X-Ingest-Token` without sign-in when `INGEST_TOKEN` is set |
 | `POST /api/ingest/notes[/preview]` | voice / typed / pasted entries (`{text, date, clientId, source}`) |
-| `GET /api/dashboard`, `GET /api/export` | analytics, backup download |
+| `GET /api/dashboard`, `GET /api/export`, `POST /api/import` | analytics, backup download, restore a backup |
 
 Environment: `PORT`, `DATA_DIR`, `TZ`, `INGEST_TOKEN`, `SECURE_COOKIES`,
 `TRUST_PROXY`. See [docs/going-online.md](docs/going-online.md).

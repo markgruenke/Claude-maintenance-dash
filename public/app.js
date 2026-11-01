@@ -2,7 +2,7 @@
    views. Each view module exports render<View>(root). */
 
 import {
-  $, el, api, toast, state, isSupervisor, reloadBootstrap, setUnauthorizedHandler,
+  $, el, mount, api, toast, state, isSupervisor, reloadBootstrap, setUnauthorizedHandler,
   flushQueue, renderQueueBanner,
 } from './core.js';
 import { renderToday } from './today.js';
@@ -28,7 +28,32 @@ let rendering = false;
 
 // ----------------------------------------------------------------- auth
 
+/** Tablet app first run: no accounts, just ask whose tablet this is. */
+function showWelcome() {
+  $('#app').hidden = true;
+  const box = $('#auth');
+  box.hidden = false;
+  const name = el('input', { autocomplete: 'name', autocapitalize: 'words', class: 'big' });
+  const err = el('p', { class: 'auth-err', role: 'alert' });
+  box.replaceChildren(el('form', { class: 'auth-card', onsubmit: async (e) => {
+    e.preventDefault();
+    try {
+      await api('/api/auth/setup', { method: 'POST', body: { name: name.value.trim() } });
+      box.hidden = true;
+      await start();
+    } catch (ex) { err.textContent = ex.message; }
+  } }, [
+    el('div', { class: 'brand' }, [el('img', { src: 'icon.svg', alt: '', width: 40, height: 40 }), el('h1', {}, 'Maintenance Log')]),
+    el('p', { class: 'desc' }, 'Everything you log stays on this tablet. Nothing is sent anywhere. What’s your name? (It goes on your reports.)'),
+    el('label', { class: 'fld' }, [el('span', { class: 'fld-label' }, 'Your name'), name]),
+    err,
+    el('button', { class: 'primary big', type: 'submit' }, 'Start'),
+  ]));
+  name.focus();
+}
+
 function showAuth(setupNeeded) {
+  if (state.local) return showWelcome();
   $('#app').hidden = true;
   const box = $('#auth');
   box.hidden = false;
@@ -80,10 +105,10 @@ function renderNav() {
   const nav = $('#nav');
   nav.replaceChildren(...VIEWS.map((v) => el('a', {
     href: '#' + v.id, class: 'nav-link' + (currentView === v.id ? ' on' : ''), 'data-view': v.id,
-  }, isSupervisor() || !v.label2 ? v.label : v.label2)));
-  $('#who').replaceChildren(
-    el('span', { class: 'who-name' }, [state.me.name, el('span', { class: 'muted' }, isSupervisor() ? ' · supervisor' : '')]),
-    el('button', { class: 'ghost', onclick: signOut }, 'Sign out'),
+  }, state.local && v.id === 'team' ? 'Settings' : (isSupervisor() || !v.label2 ? v.label : v.label2))));
+  mount($('#who'),
+    el('span', { class: 'who-name' }, [state.me.name, el('span', { class: 'muted' }, isSupervisor() && !state.local ? ' · supervisor' : '')]),
+    state.local ? null : el('button', { class: 'ghost', onclick: signOut }, 'Sign out'),
   );
 }
 
@@ -137,14 +162,17 @@ async function start() {
   await route();
 }
 
-async function boot() {
+export async function boot() {
   setUnauthorizedHandler(() => { if (state.me) { state.me = null; toast('Please sign in again'); showAuth(false); } });
   window.addEventListener('hashchange', route);
   window.addEventListener('mt:refresh', route);
   window.addEventListener('online', () => flushQueue().then(() => route()));
   setInterval(() => flushQueue().then((n) => { if (n) route(); }), 30000);
-  setInterval(autoRefresh, 60000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) autoRefresh(); });
+  if (!state.local) {
+    // Others may be changing things on a shared system; keep screens current.
+    setInterval(autoRefresh, 60000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) autoRefresh(); });
+  }
 
   try {
     const s = await api('/api/auth/status');
@@ -160,4 +188,6 @@ async function boot() {
   }
 }
 
-boot();
+// The tablet app (boot-local.js) starts the app itself once its on-tablet
+// database is open.
+if (!globalThis.__MT_LOCAL__) boot();

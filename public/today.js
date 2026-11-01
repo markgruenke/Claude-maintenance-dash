@@ -4,9 +4,10 @@
 import {
   mount, el, api, toast, state, isSupervisor, fmtHours, fmtDay, fmtTime, localDate, uid, copyText, confirmDialog, TZ,
 } from './core.js';
-import { openLogForm, openNotesForm, currentWorker } from './logform.js';
+import { openLogForm, openNotesForm, currentWorker, canLogForOthers } from './logform.js';
 import { openWorkOrder } from './orders.js';
 import { voiceSupport, listen } from './voice.js';
+import { backupNow, lastBackupAt } from './team.js';
 
 let viewDate = localDate();
 let session = null; // active voice session
@@ -28,7 +29,7 @@ export async function renderToday(root) {
 
   // ---- header
   const dateInput = el('input', { type: 'date', value: viewDate, onchange: (e) => { viewDate = e.target.value || localDate(); refresh(); } });
-  const whoBox = isSupervisor()
+  const whoBox = canLogForOthers()
     ? el('label', { class: 'inline-fld' }, ['Logging as ', (() => {
       const names = [...new Set([state.me.name, ...state.users.map((u) => u.name), ...state.technicians])];
       const s = el('select', { onchange: (e) => { try { localStorage.setItem('mt_worker', e.target.value); } catch { /* */ } refresh(); } },
@@ -45,6 +46,7 @@ export async function renderToday(root) {
       el('span', { class: 'spacer' }),
       whoBox,
     ]),
+    backupReminder(refresh),
     voiceCard(worker, refresh),
     el('div', { class: 'card' }, [
       el('h2', {}, [
@@ -59,6 +61,20 @@ export async function renderToday(root) {
         : el('div', { class: 'empty' }, 'Nothing logged yet. Tap the microphone and say what you did.'),
     ]),
   );
+}
+
+/** Tablet app only: the log lives on this device, so nag gently about backups. */
+function backupReminder(refresh) {
+  if (!state.local || !state.machines.length) return null; // nothing logged yet
+  const last = lastBackupAt();
+  const ageDays = last ? (Date.now() - Date.parse(last)) / 86400000 : Infinity;
+  if (ageDays < 7) return null;
+  return el('div', { class: 'backup-nag' }, [
+    el('span', {}, last ? `Last backup was ${Math.floor(ageDays)} days ago. Your log only lives on this tablet.` : 'Your log only lives on this tablet. Save a backup now and then.'),
+    el('span', { class: 'spacer' }),
+    navigator.canShare ? el('button', { onclick: () => backupNow({ share: true }).then(refresh).catch((e) => toast(e.message)) }, 'Send backup') : null,
+    el('button', { class: 'primary', onclick: () => backupNow().then(refresh).catch((e) => toast(e.message)) }, 'Save backup'),
+  ]);
 }
 
 // ------------------------------------------------------------- voice card
@@ -85,7 +101,7 @@ function voiceCard(worker, refresh) {
     saveBtn.disabled = true;
     const payload = {
       text: body, date, clientId: uid(), source,
-      ...(isSupervisor() ? { technician: worker } : {}),
+      ...(canLogForOthers() ? { technician: worker } : {}),
     };
     try {
       const out = await api('/api/ingest/notes', { method: 'POST', body: payload, queue: true });

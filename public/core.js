@@ -5,6 +5,7 @@ export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 export const state = {
+  local: false,        // true in the tablet app (data on this device, one person)
   me: null,
   machines: [],
   technicians: [],
@@ -15,6 +16,8 @@ export const state = {
 };
 
 export const isSupervisor = () => state.me && state.me.role === 'supervisor';
+/** Several people share this system (server mode), as opposed to one person's tablet. */
+export const isShared = () => !state.local;
 export const TZ = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; } })();
 
 // ------------------------------------------------------------------ DOM
@@ -160,9 +163,17 @@ export class ApiError extends Error {
 }
 
 let onUnauthorized = () => {};
+let transport = null;
+/** Tablet app: answer API calls in-process instead of over the network. */
+export function setTransport(fn) { transport = fn; }
 export function setUnauthorizedHandler(fn) { onUnauthorized = fn; }
 
 export async function api(path, opts = {}) {
+  if (transport) {
+    const out = await transport(opts.method || 'GET', path, opts.body || {});
+    if (out.status >= 400) throw new ApiError(out.status, (out.data && out.data.error) || 'Error ' + out.status);
+    return out.data;
+  }
   let res;
   try {
     res = await fetch(path, {

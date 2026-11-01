@@ -222,6 +222,11 @@ input[type=checkbox] { width: 22px; height: 22px; min-height: 0; accent-color: v
 .wo-row .date-col { width: 100px; font-weight: 600; }
 .wo-row .grow { flex-basis: 220px; }
 
+.backup-nag {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: var(--series-1-soft); border: 1px solid var(--series-1); border-radius: 12px;
+  padding: 10px 14px; margin-bottom: 12px; font-size: 14.5px;
+}
 .toast-action { margin-left: 14px; min-height: 32px; padding: 4px 12px; background: transparent; color: inherit; border-color: currentColor; font-weight: 700; }
 
 /* ------------------------------------------------------------ log form */

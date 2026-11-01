@@ -225,3 +225,15 @@ test('static files cannot escape the public folder', async () => {
   const res = await fetch(base + '/..%2fserver.js');
   assert.notEqual(res.status, 200);
 });
+
+test('restore from a backup replaces work data but keeps accounts', async () => {
+  const backup = (await sup('GET', '/api/export')).data;
+  const before = backup.workLogs.length;
+  await sup('POST', '/api/ingest/notes', { text: 'extra entry after the backup', date: '2026-11-02', clientId: 'r-1' });
+  assert.equal((await tech('POST', '/api/import', { data: backup })).status, 403);
+  assert.equal((await sup('POST', '/api/import', { data: { nope: true } })).status, 400);
+  const r = await sup('POST', '/api/import', { data: backup });
+  assert.equal(r.data.counts.workLogs, before);
+  assert.equal((await sup('GET', '/api/work-logs')).data.length, before);
+  assert.equal((await tech('GET', '/api/auth/status')).data.user.name, 'Dave'); // still signed in
+});

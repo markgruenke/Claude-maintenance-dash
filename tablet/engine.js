@@ -871,21 +871,21 @@ function splitPartList(text) {
       && !TIME_WORDS.test(s));
 }
 
-// Where a list of parts ends: the end of a sentence, or the start of the next
-// thing said ("…then", "…about an hour", "…parts needed…").
-const STOP = '(?=\\s+(?:on|in|at|for|from|to|with|and then|then|but|so|because|which|that|it|it\'s|its|while|after|before|since|now|everything|this|today)\\b|,?\\s+parts?\\s+need|[.;!?\\n]|$)';
-const PARTS_USED_RES = [
-  new RegExp(`\\b(?:used|replaced|installed|swapped(?:\\s+(?:in|out))?|changed(?:\\s+out)?|put\\s+(?:in|on))\\s+(?:a\\s+|an\\s+|the\\s+|new\\s+|some\\s+)*([^.;!?\\n]+?)${STOP}`, 'gi'),
-];
-
-// Parts needed are only taken from what follows the words "parts needed"
-// (or "part needed" / "needed parts"), so talking about something you
-// "need to check" never creates a part by accident.
+// Parts are only taken from what follows the words "parts used" or
+// "parts needed" ("part used", "part needed", "needed parts" work too), so
+// ordinary talk ("replaced the guard", "need to check the wiring") never
+// creates a part by accident.
+//
+// A list ends at the end of a sentence, or where the next thing starts: a
+// time ("…, about an hour", "two hours"), how it went ("back up and running",
+// "still…"), "then…", or the other parts phrase.
 const SPOKEN_TIME = '(?:\\d+(?:\\.\\d+)?|an?|one|two|three|four|five|six|seven|eight|nine|ten|half|couple(?:\\s+of)?)\\s+(?:h|hr|hrs|hours?|m|min|mins|minutes?)\\b';
-const NEEDED_STOP = `(?=\\s*,?\\s+(?:it\\s+took|took|about|around|roughly|spent|for\\s+about|then|and\\s+then|still|but|so|because|which|while|after|before|back\\s+up|running|working|it'?s|it\\s+is|everything|done|fixed|finished|waiting|parts?\\s+used|used|replaced|installed|swapped)\\b|\\s*,?\\s+${SPOKEN_TIME}|[.;!?\\n]|$)`;
-const PARTS_NEEDED_RES = [
-  new RegExp(`\\b(?:parts?\\s+need(?:ed|s)?|needed\\s+parts?)\\b\\s*(?:[:,-]\\s*|(?:are|is|include|includes|would\\s+be)\\s+)?(?:a\\s+|an\\s+|the\\s+|some\\s+|new\\s+)*([^.;!?\\n]+?)${NEEDED_STOP}`, 'gi'),
-];
+const USED_PHRASE = 'parts?\\s+used';
+const NEEDED_PHRASE = '(?:parts?\\s+need(?:ed|s)?|needed\\s+parts?)';
+const LIST_STOP = `(?=\\s*,?\\s+(?:it\\s+took|took|about|around|roughly|spent|for\\s+about|then|and\\s+then|still|but|so|because|which|while|after|before|back\\s+up|running|working|it'?s|it\\s+is|everything|done|fixed|finished|waiting|${USED_PHRASE}|${NEEDED_PHRASE})\\b|\\s*,?\\s+${SPOKEN_TIME}|[.;!?\\n]|$)`;
+const LIST_INTRO = `\\b\\s*(?:[:,-]\\s*|(?:are|is|were|was|include|includes|would\\s+be)\\s+)?(?:a\\s+|an\\s+|the\\s+|some\\s+|new\\s+)*([^.;!?\\n]+?)${LIST_STOP}`;
+const PARTS_USED_RES = [new RegExp(`\\b${USED_PHRASE}${LIST_INTRO}`, 'gi')];
+const PARTS_NEEDED_RES = [new RegExp(`\\b${NEEDED_PHRASE}${LIST_INTRO}`, 'gi')];
 
 // Status. "Waiting on parts" is said outright, or follows from listing
 // parts needed. "Need to order…" without a parts-needed list means the job
@@ -943,9 +943,7 @@ function parseNotes(text, knownMachines = []) {
   const partsNeeded = [];
   for (const re of PARTS_USED_RES) for (const m of src.matchAll(re)) partsUsed.push(...splitPartList(m[1]));
   for (const re of PARTS_NEEDED_RES) for (const m of src.matchAll(re)) partsNeeded.push(...splitPartList(m[1]));
-  // "ordered a belt" shouldn't also count as used.
-  const needed = new Set(partsNeeded.map((p) => p.toLowerCase()));
-  const used = partsUsed.filter((p) => !needed.has(p.toLowerCase()));
+  const used = partsUsed;
 
   let statusHint;
   if (WAITING_RE.test(src)) statusHint = 'waiting_parts';

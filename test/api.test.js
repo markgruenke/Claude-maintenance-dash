@@ -117,7 +117,7 @@ test('techs can only edit their own entries', async () => {
 });
 
 test('voice entry: one sentence becomes a logged entry; resends are ignored; undo leaves no trace', async () => {
-  const say = { text: 'Press two, replaced the drive belt, about an hour and a half, parts needed belt guard',
+  const say = { text: 'Press two, replaced the drive belt, about an hour and a half, parts used drive belt, parts needed belt guard',
     date: '2026-11-01', clientId: 'v-1', source: 'voice' };
   const r = await tech('POST', '/api/ingest/notes', say);
   assert.equal(r.status, 201);
@@ -169,19 +169,23 @@ test('spoken phrasing: times, machine names and status', () => {
   assert.equal(parseNotes('press 2 back up and running', known).statusHint, 'completed');
   assert.equal(parseNotes('press 2 waiting on parts to come in', known).statusHint, 'waiting_parts');
   assert.equal(parseNotes('work order 10288 on press 2', known).orderNumber, '10288');
-  assert.deepEqual(parseNotes('replaced the belt and tested it', known).partsUsed, ['belt']);
+  assert.deepEqual(parseNotes('parts used belt and tested it', known).partsUsed, ['belt']);
   // A "need" clause after a comma isn't part of what was used.
-  const hose = parseNotes('Press 2 replaced the hydraulic hose, parts needed seal kit and a pump, about an hour', known);
+  const hose = parseNotes('Press 2 replaced the hydraulic hose, parts used hydraulic hose, parts needed seal kit and a pump, about an hour', known);
   assert.deepEqual(hose.partsUsed, ['hydraulic hose']);
   assert.deepEqual(hose.partsNeeded, ['seal kit', 'pump']);
-  assert.deepEqual(parseNotes('swapped the fuse, still waiting on a contactor', known).partsUsed, ['fuse']);
+  assert.deepEqual(parseNotes('swapped the fuse, parts used fuse, still waiting on a contactor', known).partsUsed, ['fuse']);
 
-  // Parts needed come only after the words "parts needed".
+  // Parts used / needed come only after the words "parts used" / "parts needed".
+  assert.deepEqual(parseNotes('replaced the belt and swapped the guard', known).partsUsed, []);
+  assert.deepEqual(parseNotes('part used: fuse. back up and running', known).partsUsed, ['fuse']);
+  const both = parseNotes('cnc 3 parts needed coolant filter parts used o-ring', known);
+  assert.deepEqual([both.partsUsed, both.partsNeeded], [['o-ring'], ['coolant filter']]);
   const noPhrase = parseNotes('Press 2 replaced the guard, still need to order a belt guard', known);
   assert.deepEqual(noPhrase.partsNeeded, []);
   assert.equal(noPhrase.statusHint, 'in_progress');
   assert.deepEqual(parseNotes('checked the wiring, need a new contactor', known).partsNeeded, []);
-  const spoken = parseNotes('replaced the hose parts needed two seal kits and a pump took about an hour', known);
+  const spoken = parseNotes('replaced the hose parts used hose parts needed two seal kits and a pump took about an hour', known);
   assert.deepEqual(spoken.partsUsed, ['hose']);
   assert.deepEqual(spoken.partsNeeded, ['2 seal kits', 'pump']);
   assert.equal(spoken.minutes, 60);

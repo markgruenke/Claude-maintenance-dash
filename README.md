@@ -62,8 +62,8 @@ Want to look around first? Close the server, run `node scripts/seed.js`
 
 Tap the mic and talk, the way you'd tell a coworker:
 
-> "Press two, replaced the drive belt, about an hour and a half, parts
-> needed belt guard."
+> "Press two, replaced the drive belt, about an hour and a half, parts used
+> drive belt, parts needed belt guard."
 
 Tap again (or just stop talking) and it's saved: **Press 2 · 1.5 h · waiting
 on parts**, with *drive belt* used and *belt guard* added to the parts list.
@@ -75,13 +75,13 @@ What it picks up from what you say (all optional):
 - **Time spent**: "45 minutes", "an hour and a half", "a couple hours". No
   time said is fine; the entry just has no duration.
 - **Company WO#**: "work order 10288", only if you say one.
-- **Parts used**: "replaced / installed / swapped the …".
-- **Parts needed**: only what follows the words **"parts needed"** ("part
-  needed" and "needed parts" work too), e.g. "parts needed two seal kits and
-  a pump". The list ends at the end of the sentence or when you move on
-  ("…, about an hour", "…, back up and running"). A leading number is the
-  quantity. Without the phrase nothing is added as needed, so "need to
-  check the wiring" never creates a part.
+- **Parts used / parts needed**: only what follows the words **"parts
+  used"** or **"parts needed"** ("part used", "part needed", "needed parts"
+  work too), e.g. "parts used drive belt and two clamps, parts needed seal
+  kit". A list ends at the end of the sentence or when you move on ("…,
+  about an hour", "…, back up and running", or the other parts phrase). A
+  leading number is the quantity. Without the phrase nothing is added, so
+  "replaced the guard" or "need to check the wiring" never creates a part.
 - **Status**: listing parts needed or "waiting on parts" = waiting on parts;
   "still / not fixed / coming back / need to order" = still open; otherwise
   it counts as done.

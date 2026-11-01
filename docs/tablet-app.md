@@ -50,19 +50,28 @@ Safari's address bar → **Request Desktop Website**.
 
 ## Using it on an iPad
 
-1. Open the address in **Safari**.
-2. **Before entering anything:** tap **Share** (square with an up arrow) →
-   **Add to Home Screen** → **Add**.
-3. Close the Safari tab and open the app **from the new home-screen icon**,
-   and always use the icon from then on. (On iPad the home-screen app may
-   keep its own storage, separate from Safari tabs, and home-screen apps
-   are far less likely to have their data cleared.)
+Works in **Chrome** or **Safari** (needs iPadOS 16.4 or later to add it to
+the Home Screen from Chrome).
+
+1. Open the address.
+2. **Before entering anything**, add it to the Home Screen:
+   - **Chrome:** tap the **Share** icon in the address bar → **Add to Home
+     Screen** → **Add**.
+   - **Safari:** tap **Share** (square with an up arrow) → **Add to Home
+     Screen** → **Add**.
+3. Close the browser tab and open the app **from the new home-screen icon**,
+   and always use the icon from then on. (The home-screen app may keep its
+   own storage, separate from the browser tab, and home-screen apps are far
+   less likely to have their data cleared.)
 4. Enter your name, and start logging.
 
-**Voice:** tap the big mic. If Safari doesn't offer built-in speech
-recognition there, the app tells you, and you use the keyboard's 🎤 key
-instead: tap the text box, tap 🎤, talk, tap Save. (Turn it on under iPad
-**Settings → General → Keyboard → Enable Dictation** if the key is missing.)
+**Voice on iPad:** every iPad browser runs on Apple's Safari engine, and only
+Safari itself gets its built-in speech recognition; in Chrome on iPad it can
+look available but never starts. So in Chrome the big button switches you to
+the **keyboard's 🎤 key**: tap the text box, tap 🎤, talk, tap **Save**. (Turn
+it on under iPad **Settings → General → Keyboard → Enable Dictation** if the
+key is missing.) Anywhere the built-in voice doesn't start within 4 seconds,
+the app falls back the same way and remembers it for that device.
 
 **Backups:** in the app, **Settings → Send backup** opens the share sheet:
 mail it to yourself or **Save to Files**. **Restore from a backup** picks a

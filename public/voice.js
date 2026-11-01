@@ -11,10 +11,28 @@
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
+// On iPhone/iPad every browser runs on Apple's WebKit. Only Safari (and web
+// apps added to the Home Screen) can use its speech recognition; in Chrome,
+// Firefox, Edge etc. on iOS the feature can appear to exist but never start
+// (WebKit bug 239816). So those go straight to the keyboard's mic.
+const IOS_OTHER_BROWSER = /CriOS|FxiOS|EdgiOS|OPiOS|GSA\//.test(navigator.userAgent);
+const BROKEN_KEY = 'mt_voice_broken';
+
+function markedBroken() {
+  try { return localStorage.getItem(BROKEN_KEY) === '1'; } catch { return false; }
+}
+
 export function voiceSupport() {
   if (!SR) return { ok: false, reason: 'browser' };
   if (!window.isSecureContext) return { ok: false, reason: 'insecure' };
+  if (IOS_OTHER_BROWSER) return { ok: false, reason: 'ios-browser' };
+  if (markedBroken()) return { ok: false, reason: 'didnt-start' };
   return { ok: true };
+}
+
+/** Let the user try the big mic again after it was found not to work. */
+export function resetVoiceCheck() {
+  try { localStorage.removeItem(BROKEN_KEY); } catch { /* */ }
 }
 
 const ERRORS = {
@@ -47,6 +65,7 @@ export function listen({ onText, onDone, onError, silenceMs = 15000, maxMs = 5 *
   let silenceTimer = null;
   const started = Date.now();
 
+  let everStarted = false; // did the browser actually begin listening?
   const full = () => [committed, sessionFinal, interim].map((s) => s.trim()).filter(Boolean).join(' ');
 
   const finish = () => {
@@ -71,7 +90,10 @@ export function listen({ onText, onDone, onError, silenceMs = 15000, maxMs = 5 *
     rec.interimResults = true;
     rec.maxAlternatives = 1;
     sessionFinal = '';
+    rec.onstart = () => { everStarted = true; };
+    rec.onaudiostart = () => { everStarted = true; };
     rec.onresult = (e) => {
+      everStarted = true;
       // Rebuild this session's text from the full results list each time
       // (robust against browsers that resend earlier results).
       let fin = '';
@@ -101,6 +123,18 @@ export function listen({ onText, onDone, onError, silenceMs = 15000, maxMs = 5 *
     };
     rec.start();
   };
+
+  // Some browsers accept start() but never actually listen (no permission
+  // prompt, no events). If nothing has happened in 4 seconds, say so,
+  // remember it on this device, and use the keyboard's mic from now on.
+  setTimeout(() => {
+    if (finished || everStarted) return;
+    finished = true;
+    active = false;
+    try { rec && rec.abort(); } catch { /* */ }
+    try { localStorage.setItem(BROKEN_KEY, '1'); } catch { /* */ }
+    onError('Voice input didn’t start in this browser. Use the 🎤 key on your keyboard instead: tap the box, tap 🎤, talk, tap Save.', { fallback: true });
+  }, 4000);
 
   // Nothing heard at all in 20 seconds: give up quietly.
   setTimeout(() => { if (!finished && !full()) finish(); }, 20000);

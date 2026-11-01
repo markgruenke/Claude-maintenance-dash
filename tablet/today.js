@@ -6,7 +6,7 @@ import {
 } from './core.js';
 import { openLogForm, openNotesForm, currentWorker, canLogForOthers } from './logform.js';
 import { openWorkOrder } from './orders.js';
-import { voiceSupport, listen } from './voice.js';
+import { voiceSupport, listen, resetVoiceCheck } from './voice.js';
 import { backupNow, lastBackupAt } from './team.js';
 
 let viewDate = localDate();
@@ -80,7 +80,7 @@ function backupReminder(refresh) {
 // ------------------------------------------------------------- voice card
 
 function voiceCard(worker, refresh) {
-  const support = voiceSupport();
+  let support = voiceSupport();
   const text = el('textarea', {
     class: 'voice-text', rows: 3,
     placeholder: support.ok
@@ -130,11 +130,16 @@ function voiceCard(worker, refresh) {
     if (!support.ok) {
       // Built-in recognition isn't available here: hand off to the keyboard's mic.
       tip.hidden = false;
-      tip.replaceChildren(
-        el('strong', {}, 'Use the microphone on your keyboard. '),
-        support.reason === 'insecure'
-          ? 'The big mic button needs a secure (https) address; on this Wi-Fi address the browser blocks it. Talk with the keyboard’s 🎤, then tap Save.'
-          : 'This browser doesn’t have built-in speech recognition (Chrome does). Talk with the keyboard’s 🎤, then tap Save.',
+      const why = {
+        insecure: 'The big mic button needs a secure (https) address; on this Wi-Fi address the browser blocks it.',
+        'ios-browser': 'On iPad and iPhone, only Safari can use built-in voice input, so in this browser use the keyboard’s.',
+        'didnt-start': 'Built-in voice input didn’t start in this browser earlier, so this device uses the keyboard’s.',
+        browser: 'This browser doesn’t have built-in voice input.',
+      }[support.reason] || '';
+      mount(tip,
+        el('strong', {}, 'Use the 🎤 key on your keyboard. '),
+        why + ' Tap the box below, tap 🎤 on the keyboard, talk, then tap Save.',
+        support.reason === 'didnt-start' ? el('button', { class: 'ghost small-btn', onclick: () => { resetVoiceCheck(); support = voiceSupport(); tip.hidden = true; toast('OK, the mic button will try built-in voice again'); } }, 'Try built-in voice again') : null,
       );
       text.focus();
       return;
@@ -157,11 +162,22 @@ function voiceCard(worker, refresh) {
         if (t) save('voice');
         else toast('Didn’t catch anything. Tap the mic and try again.');
       },
-      onError: (msg) => {
+      onError: (msg, info) => {
         session = null;
         mic.classList.remove('listening');
-        label.textContent = 'Tap and say what you did';
+        mic.setAttribute('aria-label', 'Start talking');
         example.hidden = false;
+        if (info && info.fallback) {
+          // Switch this screen to keyboard-mic mode right away.
+          support = voiceSupport();
+          label.textContent = 'Tap, then use the keyboard 🎤';
+          text.placeholder = 'Tap here, then tap the 🎤 on your keyboard and talk';
+          tip.hidden = false;
+          tip.replaceChildren(el('strong', {}, 'Use the 🎤 key on your keyboard. '), 'Built-in voice input didn’t start in this browser. Tap the box below, tap 🎤 on the keyboard, talk, then tap Save.');
+          text.focus();
+          return;
+        }
+        label.textContent = 'Tap and say what you did';
         toast(msg, 6000);
       },
     });

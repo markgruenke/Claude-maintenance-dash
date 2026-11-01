@@ -61,7 +61,7 @@ test('engine runs with no Node modules: log by voice, report, export, restore', 
   assert.equal(r.data.setupNeeded, true);
   await engine.request('POST', '/api/auth/setup', { name: 'Mark' });
 
-  r = await engine.request('POST', '/api/ingest/notes', { text: 'Press two, replaced the drive belt, an hour, need a belt guard', date: '2026-11-01', clientId: 'x1' });
+  r = await engine.request('POST', '/api/ingest/notes', { text: 'Press two, replaced the drive belt, an hour, parts needed belt guard', date: '2026-11-01', clientId: 'x1' });
   assert.equal(r.status, 201);
   assert.equal(r.data.log.minutes, 60);
   assert.equal(r.data.log.technician, 'Mark');

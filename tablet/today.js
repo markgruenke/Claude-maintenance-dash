@@ -88,7 +88,7 @@ function voiceCard(worker, refresh) {
       : 'Tap here, then tap the 🎤 on your keyboard and talk',
   });
   const label = el('div', { class: 'mic-label' }, support.ok ? 'Tap and say what you did' : 'Tap, then use the keyboard 🎤');
-  const example = el('div', { class: 'mic-example' }, '“Press 2, replaced the drive belt, about an hour, still need to order a guard.”');
+  const example = el('div', { class: 'mic-example' }, '“Press 2, replaced the drive belt, about an hour, parts needed belt guard.”');
   const mic = el('button', { class: 'mic-btn', type: 'button', 'aria-label': 'Start talking' }, micIcon());
   const saveBtn = el('button', { class: 'primary big', type: 'button' }, 'Save');
   const tip = el('div', { class: 'voice-tip', hidden: true });

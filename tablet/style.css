@@ -227,6 +227,21 @@ input[type=checkbox] { width: 22px; height: 22px; min-height: 0; accent-color: v
   background: var(--series-1-soft); border: 1px solid var(--series-1); border-radius: 12px;
   padding: 10px 14px; margin-bottom: 12px; font-size: 14.5px;
 }
+.for-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: var(--series-1-soft); border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; font-size: 14.5px;
+}
+.assigned { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.assigned-row { display: flex; align-items: stretch; gap: 8px; border: 1px solid var(--border); border-radius: 12px; }
+.assigned-row.is-overdue { border-color: var(--status-critical); }
+.assigned-main {
+  flex: 1; min-width: 0; display: block; text-align: left; background: transparent; border: 0;
+  padding: 10px 12px; border-radius: 12px; min-height: 56px;
+}
+.assigned-title { font-size: 15.5px; }
+.wo-num { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.fact.bad { color: var(--bad-text); }
+.log-on { flex: none; margin: 8px; min-width: 92px; min-height: 44px; font-weight: 650; }
 .toast-action { margin-left: 14px; min-height: 32px; padding: 4px 12px; background: transparent; color: inherit; border-color: currentColor; font-weight: 700; }
 
 /* ------------------------------------------------------------ log form */

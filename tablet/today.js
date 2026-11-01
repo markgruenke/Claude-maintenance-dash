@@ -3,6 +3,7 @@
 
 import {
   mount, el, api, toast, state, isSupervisor, fmtHours, fmtDay, fmtTime, localDate, uid, copyText, confirmDialog, TZ,
+  woLabel, machineName, statusText,
 } from './core.js';
 import { openLogForm, openNotesForm, currentWorker, canLogForOthers } from './logform.js';
 import { openWorkOrder } from './orders.js';
@@ -20,7 +21,10 @@ const STATUS_WORDS = {
 export async function renderToday(root) {
   if (session) return; // never redraw under someone who's talking
   const worker = currentWorker();
-  const report = await api(`/api/reports?from=${viewDate}&to=${viewDate}&technician=${encodeURIComponent(worker)}&tz=${encodeURIComponent(TZ)}`);
+  const [report, openOrders] = await Promise.all([
+    api(`/api/reports?from=${viewDate}&to=${viewDate}&technician=${encodeURIComponent(worker)}&tz=${encodeURIComponent(TZ)}`),
+    api('/api/work-orders?status=open'),
+  ]);
   const refresh = () => renderToday(root);
   const entries = [...report.entries].reverse(); // newest first
   const total = entries.reduce((s, e) => s + e.minutes, 0);
@@ -39,6 +43,8 @@ export async function renderToday(root) {
     })()])
     : null;
 
+  const voice = voiceCard(worker, refresh);
+
   mount(root,
     el('div', { class: 'today-head' }, [
       el('h2', {}, isToday ? 'Today' : fmtDay(viewDate)),
@@ -47,7 +53,8 @@ export async function renderToday(root) {
       whoBox,
     ]),
     backupReminder(refresh),
-    voiceCard(worker, refresh),
+    voice.node,
+    assignedCard(openOrders, worker, voice, refresh),
     el('div', { class: 'card' }, [
       el('h2', {}, [
         `${isToday ? 'Today’s' : fmtDay(viewDate)} work`,
@@ -77,6 +84,55 @@ function backupReminder(refresh) {
   ]);
 }
 
+// --------------------------------------------------------- assigned to you
+
+// Orders made from someone's spoken/typed entry, as opposed to ones put in
+// on the Work Orders tab, from an email, or by a PM schedule.
+const FROM_ENTRY = ['voice', 'typed', 'notes', 'tablet'];
+const RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
+
+/**
+ * Work orders put in for you to do (on the Work Orders tab, by email, or by
+ * a PM schedule) that are still open: assigned to you, plus unassigned ones
+ * so nothing falls through the cracks.
+ */
+function assignedCard(openOrders, worker, voice, refresh) {
+  const today = localDate();
+  const list = openOrders
+    .filter((w) => !FROM_ENTRY.includes(w.source) && (!w.assignedTo || w.assignedTo === worker))
+    .sort((a, b) => {
+      const od = (w) => (w.dueDate && w.dueDate < today ? 0 : 1);
+      return od(a) - od(b) || RANK[a.priority] - RANK[b.priority]
+        || String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999'))
+        || a.createdAt.localeCompare(b.createdAt);
+    });
+  return el('div', { class: 'card' }, [
+    el('h2', {}, [`Assigned to you`, el('span', { class: 'muted small' }, ` · ${list.length} open`)]),
+    list.length
+      ? el('div', { class: 'assigned' }, list.map((w) => {
+        const overdue = w.dueDate && w.dueDate < today;
+        return el('div', { class: 'assigned-row' + (overdue ? ' is-overdue' : '') }, [
+          el('button', { class: 'assigned-main', type: 'button', onclick: () => openWorkOrder(w.id, refresh) }, [
+            el('div', { class: 'assigned-title' }, [
+              el('span', { class: 'wo-num' }, woLabel(w)), ' ',
+              el('strong', {}, machineName(w.machineId) || ''), machineName(w.machineId) ? ' — ' : '', w.title,
+            ]),
+            el('div', { class: 'entry-facts' }, [
+              ['urgent', 'high'].includes(w.priority) ? el('span', { class: 'fact warn' }, w.priority) : null,
+              el('span', { class: 'fact' }, statusText(w.status)),
+              w.dueDate ? el('span', { class: 'fact' + (overdue ? ' bad' : '') }, (overdue ? 'overdue · was due ' : 'due ') + fmtDay(w.dueDate)) : null,
+              w.source === 'pm' ? el('span', { class: 'fact' }, 'PM') : null,
+              !w.assignedTo ? el('span', { class: 'fact muted' }, 'unassigned') : null,
+              w.createdBy && w.createdBy !== worker && w.createdBy !== 'PM scheduler' ? el('span', { class: 'fact muted' }, 'from ' + w.createdBy) : null,
+            ]),
+          ]),
+          el('button', { class: 'log-on', type: 'button', onclick: () => voice.logOn(w) }, '🎤 Log'),
+        ]);
+      }))
+      : el('div', { class: 'empty small' }, 'Nothing assigned right now. Work orders put in on the Work Orders tab show up here.'),
+  ]);
+}
+
 // ------------------------------------------------------------- voice card
 
 function voiceCard(worker, refresh) {
@@ -92,6 +148,18 @@ function voiceCard(worker, refresh) {
   const mic = el('button', { class: 'mic-btn', type: 'button', 'aria-label': 'Start talking' }, micIcon());
   const saveBtn = el('button', { class: 'primary big', type: 'button' }, 'Save');
   const tip = el('div', { class: 'voice-tip', hidden: true });
+  // When set, the next entry goes onto this work order (from "Assigned to you").
+  let target = null;
+  const forBar = el('div', { class: 'for-bar', hidden: true });
+  const drawFor = () => {
+    forBar.hidden = !target;
+    if (!target) { forBar.replaceChildren(); return; }
+    forBar.replaceChildren(
+      el('span', {}, ['Logging on ', el('strong', {}, woLabel(target)), ` — ${[machineName(target.machineId), target.title].filter(Boolean).join(' — ')}`]),
+      el('span', { class: 'spacer' }),
+      el('button', { class: 'ghost small-btn', type: 'button', onclick: () => { target = null; drawFor(); } }, '✕ Not this one'),
+    );
+  };
 
   const date = viewDate;
 
@@ -101,11 +169,14 @@ function voiceCard(worker, refresh) {
     saveBtn.disabled = true;
     const payload = {
       text: body, date, clientId: uid(), source,
+      ...(target ? { workOrderId: target.id } : {}),
       ...(canLogForOthers() ? { technician: worker } : {}),
     };
     try {
       const out = await api('/api/ingest/notes', { method: 'POST', body: payload, queue: true });
       text.value = '';
+      target = null;
+      drawFor();
       if (out.queued) { refresh(); return; }
       const bits = [out.log && out.workOrder ? (state.machines.find((m) => m.id === out.log.machineId) || {}).name : '',
         out.log && out.log.minutes ? fmtHours(out.log.minutes) : '',
@@ -183,7 +254,18 @@ function voiceCard(worker, refresh) {
     });
   });
 
-  return el('div', { class: 'voice-card' }, [
+  /** Aim the next entry at a work order, then start listening (or open the
+   *  keyboard for its mic). Runs inside the tap, so the browser allows it. */
+  function logOn(wo) {
+    target = wo;
+    drawFor();
+    node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (support.ok) { if (!session) mic.click(); }
+    else { mic.click(); }
+  }
+
+  const node = el('div', { class: 'voice-card' }, [
+    forBar,
     el('div', { class: 'mic-wrap' }, [mic, label, example]),
     tip,
     text,
@@ -194,6 +276,7 @@ function voiceCard(worker, refresh) {
       saveBtn,
     ]),
   ]);
+  return { node, logOn };
 }
 
 function micIcon() {

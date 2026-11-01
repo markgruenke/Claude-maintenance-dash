@@ -50,7 +50,7 @@ Want to look around first? Close the server, run `node scripts/seed.js`
 
 | Screen | What it's for |
 |---|---|
-| **Today** (tablet) | One big **microphone** button: say what you did, it's logged. Today's entries (time of day, machine, time spent, status, parts) with an **Entered** checkbox |
+| **Today** (tablet) | One big **microphone** button: say what you did, it's logged. **Assigned to you**: open work orders put in on the Work Orders tab (or by email / PM), with a 🎤 **Log** button that puts the entry straight onto that order. Today's entries (time of day, machine, time spent, status, parts) with an **Entered** checkbox |
 | **Work Orders** | Every order with filters (open / in progress / waiting parts / overdue / completed), search, and a detail view to edit everything, add parts and notes, see full history |
 | **Parts** | Need to order → on order → received → installed. **Copy order list** for purchasing |
 | **Reports** | *Work list* (end of day) and *Handoff report* for Today, Yesterday, Fri–Sun, Sat–Sun, last 7 days or any dates, for everyone or one person |

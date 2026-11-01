@@ -84,7 +84,7 @@ export async function renderOrders(root) {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => { filters.q = search.value; refresh().then(() => { const s = root.querySelector('.search'); s.focus(); s.setSelectionRange(s.value.length, s.value.length); }); }, 250);
   });
-  const techs = [...new Set([...state.users.map((u) => u.name), ...state.technicians])];
+  const techs = [...new Set([state.me.name, ...state.users.map((u) => u.name), ...state.technicians])];
 
   const table = list.length ? el('table', { class: 'data orders' }, [
     el('thead', {}, el('tr', {}, ['WO #', 'Machine', 'Job', 'Priority', 'Status', 'Assigned', 'Due', 'Opened', 'Time', 'Parts']
@@ -129,7 +129,7 @@ export async function openWorkOrder(id, onChange = () => {}) {
   let detail;
   try { detail = await api('/api/work-orders/' + id); } catch (err) { return toast(err.message); }
   const { workOrder: w, logs, parts, pm } = detail;
-  const techs = [...new Set([...state.users.map((u) => u.name), ...state.technicians])];
+  const techs = [...new Set([state.me.name, ...state.users.map((u) => u.name), ...state.technicians])];
   let dirty = false;
 
   const close = openModal(`${woLabel(w)} — ${w.title}`, (close) => {
@@ -247,14 +247,15 @@ export async function openWorkOrder(id, onChange = () => {}) {
 // --------------------------------------------------------------- new order
 
 export function openNewOrder({ onDone, machineName: presetMachine = '' } = {}) {
-  const techs = [...new Set([...state.users.map((u) => u.name), ...state.technicians])];
+  const techs = [...new Set([state.me.name, ...state.users.map((u) => u.name), ...state.technicians])];
   openModal('New work order', (close) => {
     const f = {
       title: el('input', { placeholder: 'What needs doing' }),
       machine: el('input', { list: 'machine-list', placeholder: 'e.g. CNC 3', value: presetMachine }),
       orderNumber: el('input', { placeholder: 'optional' }),
       priority: select(state.priorities, 'medium'),
-      assignedTo: select([['', '— unassigned —'], ...techs.map((t) => [t, t])], ''),
+      // On your own tablet, new orders are yours; on the shared system the supervisor picks.
+      assignedTo: select([['', '— unassigned —'], ...techs.map((t) => [t, t])], state.local ? state.me.name : ''),
       dueDate: el('input', { type: 'date' }),
       description: el('textarea', { rows: 3 }),
     };

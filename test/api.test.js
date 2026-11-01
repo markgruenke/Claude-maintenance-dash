@@ -336,3 +336,28 @@ test('"parts needed two seal kits" files 2 × seal kits; no phrase files nothing
   });
   assert.deepEqual(none.data.partsNeeded, []);
 });
+
+test('logging onto a chosen work order (Assigned to you → 🎤 Log)', async () => {
+  // Supervisor puts in an order for Dave on the Work Orders tab.
+  const wo = (await sup('POST', '/api/work-orders', {
+    title: 'Replace guard on Press 6', machineName: 'Press 6', assignedTo: 'Dave', priority: 'high',
+  })).data;
+  assert.equal(wo.source, 'manual');
+  assert.ok(wo.nn); // no company WO#, so it gets a WO_NN number
+  // Dave logs on it; what he says mentions another machine and no WO#,
+  // but the chosen order (and its machine) wins.
+  const r = await tech('POST', '/api/ingest/notes', {
+    text: 'started on it, pulled the old guard off CNC 3, about 30 minutes', date: '2026-11-05', clientId: 't-1', workOrderId: wo.id,
+  });
+  assert.equal(r.status, 201);
+  assert.equal(r.data.workOrder.id, wo.id);
+  assert.equal(r.data.createdOrder, false);
+  assert.equal(r.data.log.machineId, wo.machineId);
+  assert.equal(r.data.log.minutes, 30);
+  assert.equal(r.data.workOrder.status, 'in_progress'); // was open, nothing said about done
+  const done = await tech('POST', '/api/ingest/notes', {
+    text: 'new guard installed, all good', date: '2026-11-05', clientId: 't-2', workOrderId: wo.id,
+  });
+  assert.equal(done.data.workOrder.status, 'completed');
+  assert.equal((await tech('POST', '/api/ingest/notes', { text: 'x', clientId: 't-3', workOrderId: 'nope' })).status, 400);
+});

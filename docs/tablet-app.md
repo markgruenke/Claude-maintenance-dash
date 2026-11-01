@@ -29,13 +29,49 @@ Options (pick one):
 | **GitHub Pages, repo stays private** | Upgrade to GitHub Pro, then Settings → Pages | Paid plan |
 | **Netlify or Cloudflare Pages** | Free account, connect this repo (it can stay private), publish folder `tablet` | Works from a home computer's browser; nothing to install |
 
-## Using it
+## Publishing it (GitHub Pages)
 
-1. Open the address on the tablet in **Chrome** (Android) or **Safari** (iPad).
-2. Enter your name.
-3. **Add it to the home screen** (Chrome menu → *Add to Home screen*; Safari
-   Share → *Add to Home Screen*) and from then on open it from that icon.
-   Browsers are much less likely to clear data for home-screen apps.
+This repo is set up to be published straight from its branch:
+
+1. **Make the repo public:** on github.com, open the repo → **Settings** →
+   **General** → scroll to **Danger Zone** → **Change visibility** →
+   **Change to public**, and confirm.
+2. **Turn on Pages:** **Settings** → **Pages** → *Build and deployment*:
+   Source **Deploy from a branch**; Branch
+   **`claude/maintenance-tracking-system-3ocfi8`**, folder **`/ (root)`** →
+   **Save**.
+3. Wait a minute or two and refresh that page: it shows *"Your site is live
+   at …"*. That's the address (expected:
+   `https://markgruenke.github.io/Claude-maintenance-dash/`). It forwards to
+   the app in `tablet/`.
+
+On an iPad, if github.com doesn't show the Settings tab, tap **aA** in
+Safari's address bar → **Request Desktop Website**.
+
+## Using it on an iPad
+
+1. Open the address in **Safari**.
+2. **Before entering anything:** tap **Share** (square with an up arrow) →
+   **Add to Home Screen** → **Add**.
+3. Close the Safari tab and open the app **from the new home-screen icon**,
+   and always use the icon from then on. (On iPad the home-screen app may
+   keep its own storage, separate from Safari tabs, and home-screen apps
+   are far less likely to have their data cleared.)
+4. Enter your name, and start logging.
+
+**Voice:** tap the big mic. If Safari doesn't offer built-in speech
+recognition there, the app tells you, and you use the keyboard's 🎤 key
+instead: tap the text box, tap 🎤, talk, tap Save. (Turn it on under iPad
+**Settings → General → Keyboard → Enable Dictation** if the key is missing.)
+
+**Backups:** in the app, **Settings → Send backup** opens the share sheet:
+mail it to yourself or **Save to Files**. **Restore from a backup** picks a
+file from Files.
+
+## Using it on Android
+
+Open the address in **Chrome**, menu (⋮) → **Add to Home screen**, then open
+it from the icon. The big mic button uses Chrome's speech recognition.
 
 ## Keep backups
 

@@ -15,6 +15,12 @@ const PRIORITY_RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
 // period: '' or a periodRanges() id (Yesterday / This weekend / Last weekend).
 const filters = { status: 'recent', period: '', q: '', machineId: '', assignedTo: '', priority: '' };
 
+// Column sorting: tap a column title to sort by it, again to reverse, a third
+// time to go back to the normal order. `key` null = normal order.
+const sortBy = { key: null, dir: 1 };
+const STATUS_RANK = { open: 0, in_progress: 1, waiting_parts: 2, completed: 3, cancelled: 4 };
+const natural = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+
 export async function renderOrders(root) {
   // Arriving from the Schedule page's workload table pre-filters by person.
   const fromSchedule = sessionStorage.getItem('mt_assigned_filter');
@@ -80,7 +86,23 @@ export async function renderOrders(root) {
     }
     return true;
   };
-  const list = orders.filter(match).sort((a, b) => {
+  // Sortable columns: [title, key, value(w), first-tap direction, td class].
+  // Blank values (no machine, no due date…) always go last.
+  const COLUMNS = [
+    ['WO #', 'wo', (w) => woLabel(w), 1, ''],
+    ['Machine', 'machine', (w) => machineName(w.machineId) || null, 1, ''],
+    ['Job', 'job', (w) => w.title, 1, ''],
+    ['Priority', 'priority', (w) => PRIORITY_RANK[w.priority], 1, ''],          // urgent first
+    ['Status', 'status', (w) => STATUS_RANK[w.status], 1, ''],
+    ['Assigned', 'assigned', (w) => w.assignedTo || null, 1, ''],
+    ['Due', 'due', (w) => w.dueDate || null, 1, ''],                            // soonest first
+    ['Opened', 'opened', (w) => w.createdAt, -1, 'hide-sm'],                    // newest first
+    ['Time', 'time', (w) => minutesBy.get(w.id) || null, -1, 'num'],             // most first
+    ['Parts', 'parts', (w) => partsBy.get(w.id) || null, -1, 'num hide-sm'],
+  ];
+  const sortCol = COLUMNS.find((c) => c[1] === sortBy.key) || null;
+
+  const normalOrder = (a, b) => {
     if (period || filters.status === 'recent') return lastActivity.get(b.id).localeCompare(lastActivity.get(a.id));
     const closedA = ['completed', 'cancelled'].includes(a.status), closedB = ['completed', 'cancelled'].includes(b.status);
     if (closedA !== closedB) return closedA ? 1 : -1;
@@ -88,6 +110,14 @@ export async function renderOrders(root) {
     return PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]
       || String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999'))
       || a.createdAt.localeCompare(b.createdAt);
+  };
+  const list = orders.filter(match).sort((a, b) => {
+    if (!sortCol) return normalOrder(a, b);
+    const va = sortCol[2](a), vb = sortCol[2](b);
+    const blankA = va === null || va === undefined || va === '', blankB = vb === null || vb === undefined || vb === '';
+    if (blankA || blankB) return blankA === blankB ? normalOrder(a, b) : (blankA ? 1 : -1);
+    const c = typeof va === 'number' && typeof vb === 'number' ? va - vb : natural(va, vb);
+    return (c * sortBy.dir) || normalOrder(a, b);
   });
 
   const counts = {
@@ -113,8 +143,20 @@ export async function renderOrders(root) {
   const techs = [...new Set([state.me.name, ...state.users.map((u) => u.name), ...state.technicians])];
 
   const table = list.length ? el('table', { class: 'data orders' }, [
-    el('thead', {}, el('tr', {}, ['WO #', 'Machine', 'Job', 'Priority', 'Status', 'Assigned', 'Due', 'Opened', 'Time', 'Parts']
-      .map((h, i) => el('th', { class: [i === 8 || i === 9 ? 'num' : '', i === 7 || i === 9 ? 'hide-sm' : ''].join(' ') }, h)))),
+    el('thead', {}, el('tr', {}, COLUMNS.map(([title, key, , firstDir, cls]) => {
+      const on = sortBy.key === key;
+      const arrow = on ? (sortBy.dir === 1 ? ' ▲' : ' ▼') : '';
+      return el('th', { class: cls + ' sortable' + (on ? ' sorted' : ''), 'aria-sort': on ? (sortBy.dir === 1 ? 'ascending' : 'descending') : 'none' },
+        el('button', {
+          type: 'button', class: 'th-sort', title: `Sort by ${title.toLowerCase()}`,
+          onclick: () => {
+            if (!on) { sortBy.key = key; sortBy.dir = firstDir; }
+            else if (sortBy.dir === firstDir) sortBy.dir = -firstDir;   // second tap: reverse
+            else { sortBy.key = null; sortBy.dir = 1; }                 // third tap: normal order
+            refresh();
+          },
+        }, [title, el('span', { class: 'sort-arrow' }, arrow)]));
+    }))),
     el('tbody', {}, list.map((w) => el('tr', { class: 'clickable', onclick: () => openWorkOrder(w.id, refresh) }, [
       el('td', { class: 'nowrap' }, woLabel(w)),
       el('td', {}, machineName(w.machineId) || '—'),
@@ -169,6 +211,10 @@ export async function renderOrders(root) {
       select([['', 'Anyone'], ['__none', 'Unassigned'], ...techs.map((t) => [t, t])], filters.assignedTo, { onchange: (e) => { filters.assignedTo = e.target.value; refresh(); } }),
       select([['', 'Any priority'], ...state.priorities.map((p) => [p, p])], filters.priority, { onchange: (e) => { filters.priority = e.target.value; refresh(); } }),
     ]),
+    sortCol ? el('p', { class: 'period-note' }, [
+      `Sorted by ${sortCol[0].toLowerCase()} ${sortBy.dir === sortCol[3] ? '' : '(reversed) '}· tap the column title again to reverse, a third time for the normal order. `,
+      el('button', { class: 'ghost small-btn', onclick: () => { sortBy.key = null; sortBy.dir = 1; refresh(); } }, '✕ Normal order'),
+    ]) : null,
     el('div', { class: 'card flush' }, el('div', { class: 'table-scroll' }, table)),
   );
 }

@@ -242,6 +242,14 @@ input[type=checkbox] { width: 22px; height: 22px; min-height: 0; accent-color: v
 .wo-num { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
 .fact.bad { color: var(--bad-text); }
 .log-on { flex: none; margin: 8px; min-width: 92px; min-height: 44px; font-weight: 650; }
+.th-sort {
+  background: transparent; border: 0; padding: 4px 0; min-height: 32px; font: inherit; color: inherit;
+  font-weight: 600; white-space: nowrap; cursor: pointer; border-radius: 4px;
+}
+.th-sort:hover { background: transparent; color: var(--text-primary); }
+th.sorted .th-sort { color: var(--text-primary); }
+th.num .th-sort { margin-left: auto; }
+.sort-arrow { font-size: 10px; margin-left: 2px; }
 .period-boxes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
 .period-box {
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;

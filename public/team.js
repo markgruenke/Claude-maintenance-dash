@@ -18,7 +18,8 @@ export function lastBackupAt() {
 /** Download (or share) a backup file of everything. */
 export async function backupNow({ share = false } = {}) {
   if (state.engine) await state.engine.flush();
-  const data = await api('/api/export');
+  // Include the photo images so a restore brings them back too.
+  const data = await api('/api/export?photos=1');
   const json = JSON.stringify(data, null, 2);
   const filename = `maintenance-backup-${localDate()}.json`;
   const file = new File([json], filename, { type: 'application/json' });
@@ -69,7 +70,7 @@ function backupCard(refresh) {
   return el('div', { class: 'card' }, [
     el('h2', {}, 'Backup & restore'),
     el('p', { class: 'desc' }, local
-      ? 'Your log lives only on this tablet. Save a backup file now and then (or send it to yourself), so a lost or reset tablet doesn’t lose your history. The same file can later be loaded into the shared system.'
+      ? 'Your log and photos live only on this tablet. Save a backup file now and then (or send it to yourself), so a lost or reset tablet doesn’t lose your history. The backup includes your photos. The same file can later be loaded into the shared system.'
       : 'The server keeps a copy every day in data/backups (last 30 days). You can also save a copy now (PINs and passwords aren’t included), or load a backup, for example one from a tablet.'),
     el('p', {}, last ? `Last backup from this device: ${daysAgo(last)} (${fmtDate(last)}).` : el('strong', {}, 'No backup saved from this device yet.')),
     el('div', { class: 'row-end left' }, [

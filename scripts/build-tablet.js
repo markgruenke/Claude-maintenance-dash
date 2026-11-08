@@ -22,7 +22,7 @@ const ROOT = path.join(__dirname, '..');
 const OUT = path.join(ROOT, 'tablet');
 const LIB = ['store', 'parser', 'analytics', 'reports', 'pm', 'api'];
 const PUBLIC_FILES = ['app.js', 'core.js', 'today.js', 'orders.js', 'parts.js', 'reports.js', 'schedule.js',
-  'dashboard.js', 'team.js', 'logform.js', 'voice.js', 'style.css', 'icon.svg'];
+  'dashboard.js', 'team.js', 'logform.js', 'voice.js', 'photos.js', 'style.css', 'icon.svg'];
 
 function bundleEngine() {
   const mods = LIB.map((name) => {

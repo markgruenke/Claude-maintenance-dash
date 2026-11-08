@@ -7,6 +7,7 @@ import {
 } from './core.js';
 import { openLogForm } from './logform.js';
 import { openPartForm } from './parts.js';
+import { addPhotosAskKind, thumbStrip, KINDS as PHOTO_KINDS } from './photos.js';
 
 const PRIORITY_RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
 // 'recent' (default): anything touched in the last 7 days, open or done, so
@@ -22,9 +23,11 @@ export async function renderOrders(root) {
     filters.assignedTo = fromSchedule === '— unassigned —' ? '__none' : fromSchedule;
     filters.status = 'active';
   }
-  const [orders, logs, parts] = await Promise.all([
-    api('/api/work-orders'), api('/api/work-logs'), api('/api/parts'),
+  const [orders, logs, parts, photos] = await Promise.all([
+    api('/api/work-orders'), api('/api/work-logs'), api('/api/parts'), api('/api/photos'),
   ]);
+  const photosBy = new Map();
+  for (const ph of photos) if (ph.workOrderId) photosBy.set(ph.workOrderId, (photosBy.get(ph.workOrderId) || 0) + 1);
   const refresh = () => renderOrders(root);
   const minutesBy = new Map();
   for (const l of logs) if (l.workOrderId) minutesBy.set(l.workOrderId, (minutesBy.get(l.workOrderId) || 0) + l.minutes);
@@ -115,7 +118,8 @@ export async function renderOrders(root) {
     el('tbody', {}, list.map((w) => el('tr', { class: 'clickable', onclick: () => openWorkOrder(w.id, refresh) }, [
       el('td', { class: 'nowrap' }, woLabel(w)),
       el('td', {}, machineName(w.machineId) || '—'),
-      el('td', {}, [w.title, w.source === 'pm' ? el('span', { class: 'tag' }, 'PM') : null]),
+      el('td', {}, [w.title, w.source === 'pm' ? el('span', { class: 'tag' }, 'PM') : null,
+        photosBy.get(w.id) ? el('span', { class: 'tag', title: 'Photos' }, `📷 ${photosBy.get(w.id)}`) : null]),
       el('td', {}, badge(w.priority, w.priority)),
       el('td', {}, badge(w.status)),
       el('td', {}, w.assignedTo || el('span', { class: 'muted' }, 'unassigned')),
@@ -173,8 +177,14 @@ export async function renderOrders(root) {
 
 export async function openWorkOrder(id, onChange = () => {}) {
   let detail;
-  try { detail = await api('/api/work-orders/' + id); } catch (err) { return toast(err.message); }
+  try {
+    // Fresh machine list first: the Machine box must show this order's
+    // machine, or saving the form would clear it.
+    await reloadBootstrap();
+    detail = await api('/api/work-orders/' + id);
+  } catch (err) { return toast(err.message); }
   const { workOrder: w, logs, parts, pm } = detail;
+  const photos = detail.photos || [];
   const techs = [...new Set([state.me.name, ...state.users.map((u) => u.name), ...state.technicians])];
   let dirty = false;
 
@@ -264,6 +274,14 @@ export async function openWorkOrder(id, onChange = () => {}) {
         el('span', { class: 'spacer' }),
         saveBtn,
       ]),
+
+      el('h4', {}, [`Photos${photos.length ? ` (${photos.length})` : ''} `, el('button', { class: 'ghost small-btn', onclick: () => addPhotosAskKind({ workOrderId: w.id }, { onDone: reopen }) }, '📷 Add photo')]),
+      photos.length
+        ? el('div', { class: 'photo-groups' }, PHOTO_KINDS.map(([kind, label]) => {
+          const these = photos.filter((ph) => ph.kind === kind);
+          return these.length ? el('div', { class: 'photo-group' }, [el('div', { class: 'muted small' }, label), thumbStrip(these, { onChange: reopen, showKind: false })]) : null;
+        }))
+        : el('p', { class: 'muted' }, 'No photos yet. Add what was done, what needs doing, or the part you need.'),
 
       el('h4', {}, ['Parts ', el('button', { class: 'ghost small-btn', onclick: () => openPartForm({ workOrder: w, onDone: reopen }) }, '+ Add part')]),
       parts.length ? el('table', { class: 'data' }, [

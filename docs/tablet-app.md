@@ -88,7 +88,9 @@ The log lives only on the tablet. If the tablet is lost, reset, or someone
 clears the browser's site data, the log is gone. So:
 
 - **Settings → Save backup file** (or **Send backup** to email it to yourself
-  or put it in Drive). Today reminds you when it's been a week.
+  or put it in Drive). Today reminds you when it's been a week. Backups
+  include your photos, so they grow with them (roughly 0.3 MB per photo);
+  if email refuses a big one, use **Save to Files** instead.
 - **Settings → Restore from a backup** loads a backup file, e.g. onto a new
   tablet.
 - The same backup file can later be loaded into the shared server version

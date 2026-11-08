@@ -22,7 +22,7 @@ test('engine runs with no Node modules: log by voice, report, export, restore', 
   let src = fs.readFileSync(path.join(OUT, 'engine.js'), 'utf8');
   // Load the ES module as a script: turn its exports into a returned object.
   src = src.replace(/^export async function /gm, 'async function ').replace(/^export function /gm, 'function ');
-  src += '\n;({ startEngine, request, flush });';
+  src += '\n;({ startEngine, request, flush, photoURL });';
   const listeners = {};
   const saved = {};
   const fakeIdb = {
@@ -35,11 +35,13 @@ test('engine runs with no Node modules: log by voice, report, export, restore', 
               objectStore: () => ({
                 get: (k) => { const r = {}; setTimeout(() => { r.result = saved[k]; r.onsuccess(); }); return r; },
                 put: (v, k) => { saved[k] = v; setTimeout(() => tx.oncomplete && tx.oncomplete()); },
+                delete: (k) => { delete saved[k]; setTimeout(() => tx.oncomplete && tx.oncomplete()); },
               }),
             };
             return tx;
           },
           createObjectStore() {},
+          objectStoreNames: { contains: () => false },
         };
         req.result = db;
         req.onupgradeneeded && req.onupgradeneeded();
@@ -50,7 +52,7 @@ test('engine runs with no Node modules: log by voice, report, export, restore', 
   };
   const ctx = vm.createContext({
     indexedDB: fakeIdb, console, setTimeout, clearTimeout, URL, URLSearchParams, Intl, Date, structuredClone,
-    crypto: globalThis.crypto,
+    crypto: globalThis.crypto, Blob, atob, btoa, URL: class extends URL { static createObjectURL() { return 'blob:x'; } static revokeObjectURL() {} },
     document: { addEventListener: (t, f) => { listeners[t] = f; }, hidden: false },
     window: { addEventListener: () => {} },
   });
@@ -77,6 +79,26 @@ test('engine runs with no Node modules: log by voice, report, export, restore', 
   await engine.request('POST', '/api/ingest/notes', { text: 'second entry', date: '2026-11-01', clientId: 'x2' });
   r = await engine.request('POST', '/api/import', { data: JSON.parse(JSON.stringify(backup)) });
   assert.equal(r.data.counts.workLogs, 1);
+
+  // Photos: stored as images in IndexedDB, shown via a URL, included in a
+  // backup with ?photos=1, restored, and removed with their entry.
+  const img = 'data:image/jpeg;base64,' + Buffer.from('fake jpeg bytes').toString('base64');
+  const entry = await engine.request('POST', '/api/ingest/notes', { text: 'Press two greased the ram', date: '2026-11-01', clientId: 'x3' });
+  r = await engine.request('POST', '/api/photos', { logId: entry.data.log.id, kind: 'done', full: img, thumb: img });
+  assert.equal(r.status, 201);
+  const photoId = r.data.id;
+  assert.equal(r.data.workOrderId, entry.data.workOrder.id);
+  assert.equal(await engine.photoURL(photoId, true), 'blob:x');
+  await engine.flush();
+  assert.ok(saved[photoId] && saved[photoId].full, 'image reached the (fake) IndexedDB');
+  const withPhotos = (await engine.request('GET', '/api/export?photos=1')).data;
+  assert.equal(withPhotos.photoFiles[photoId].full, img);
+  r = await engine.request('POST', '/api/import', { data: withPhotos });
+  assert.equal(r.data.counts.photos, 1);
+  await engine.request('DELETE', '/api/work-logs/' + entry.data.log.id);
+  await engine.flush();
+  assert.equal((await engine.request('GET', '/api/photos')).data.length, 0);
+  assert.equal(saved[photoId], undefined, 'undo removed the image too');
 
   r = await engine.request('GET', '/api/nope');
   assert.equal(r.status, 404);

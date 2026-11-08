@@ -100,6 +100,14 @@ the big button works directly. Chrome's built-in recognition sends audio to
 Google to transcribe, so it needs internet; the keyboard mic depends on the
 keyboard's own settings.
 
+**Photos.** Tap **📷 Photo** next to Save (camera or photo library), then talk
+or type as usual: the photos go on that entry as "work done". Each entry also
+has a 📷 button to add one later. On a work order, **📷 Add photo** asks what
+it shows first: **Work done**, **Needs doing** or **Part needed**. Tap any
+thumbnail for full size, to change what it shows, add a caption (e.g. a part
+number) or delete it. Photos are shrunk on the device (longest side 1600 px,
+a few hundred KB) and are included in backups.
+
 **Detailed entry** (all fields as a form) and **Paste notes** are still there
 for when you want them.
 

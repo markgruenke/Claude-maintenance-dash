@@ -132,6 +132,7 @@ function orderList(list, { showLast = true, showParts = true, refresh }) {
       ' ', el('strong', {}, o.machineName ? o.machineName + ' — ' : ''), o.title, ' ',
       badge(o.status), ['urgent', 'high'].includes(o.priority) ? badge(o.priority, o.priority) : null,
       o.minutes ? el('span', { class: 'muted' }, ' · ' + fmtHours(o.minutes)) : null,
+      o.photoCount ? el('span', { class: 'muted' }, ` · 📷 ${o.photoCount}`) : null,
       o.dueDate ? el('span', { class: 'muted' }, ' · due ' + fmtDay(o.dueDate)) : null,
       o.assignedTo ? el('span', { class: 'muted' }, ' · ' + o.assignedTo) : null,
     ]),

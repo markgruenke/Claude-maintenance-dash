@@ -404,3 +404,48 @@ test('Edit: typed Job text renames the entry’s own job, never a shared one; Pl
   assert.equal(e.data.workOrder.orderNumber, '');
   assert.ok(e.data.workOrder.nn);
 });
+
+test('photos: attach to an entry or a work order, view, change, back up, follow the entry, undo', async () => {
+  const img = 'data:image/jpeg;base64,' + Buffer.from('fake jpeg bytes').toString('base64');
+  const e = await tech('POST', '/api/ingest/notes', { text: 'Lathe 8 replaced the belt', date: '2026-11-07', clientId: 'p-1' });
+  // From Today: attach to the entry -> lands on its work order too.
+  const ph = (await tech('POST', '/api/photos', { logId: e.data.log.id, kind: 'done', full: img, thumb: img, width: 1600, height: 1200 })).data;
+  assert.equal(ph.workOrderId, e.data.workOrder.id);
+  // From a work order: "Part needed" photo.
+  const part = (await tech('POST', '/api/photos', { workOrderId: e.data.workOrder.id, kind: 'part', caption: 'belt guard', full: img })).data;
+  assert.equal(part.kind, 'part');
+  const detail = (await sup('GET', '/api/work-orders/' + e.data.workOrder.id)).data;
+  assert.equal(detail.photos.length, 2);
+  // The image itself (and its thumbnail) come back as JPEG.
+  const res = await fetch(base + `/api/photos/${ph.id}/file?thumb=1`, { headers: { Cookie: (await (async () => '')()) } });
+  assert.equal(res.status, 401); // not signed in
+  // Bad uploads are refused.
+  assert.equal((await tech('POST', '/api/photos', { workOrderId: e.data.workOrder.id, full: 'hello' })).status, 400);
+  assert.equal((await tech('POST', '/api/photos', { full: img })).status, 400);
+  // Change what it shows.
+  assert.equal((await tech('PATCH', '/api/photos/' + ph.id, { kind: 'todo', caption: 'before' })).data.kind, 'todo');
+  // Backups include the images when asked.
+  const backup = (await sup('GET', '/api/export?photos=1')).data;
+  assert.equal(backup.photoFiles[ph.id].full, img);
+  // Moving the entry to another job takes its photo along.
+  const moved = (await tech('PATCH', '/api/work-logs/' + e.data.log.id, { jobText: 'Lathe 8 drive belt replacement and guard' })).data;
+  const photos = (await sup('GET', '/api/photos?logId=' + e.data.log.id)).data;
+  assert.equal(photos[0].workOrderId, moved.workOrderId);
+  // Undo / delete the entry removes its photo (the work-order photo stays).
+  await tech('DELETE', '/api/work-logs/' + e.data.log.id);
+  assert.equal((await sup('GET', '/api/photos?logId=' + e.data.log.id)).data.length, 0);
+});
+
+test('photo files are served to signed-in users only', async () => {
+  const img = 'data:image/jpeg;base64,' + Buffer.from('jpeg!').toString('base64');
+  const wo = (await sup('POST', '/api/work-orders', { title: 'Photo test job' })).data;
+  const ph = (await sup('POST', '/api/photos', { workOrderId: wo.id, full: img })).data;
+  const anon = await fetch(base + `/api/photos/${ph.id}/file`);
+  assert.equal(anon.status, 401);
+  const login = await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Mark', secret: 'correct horse' }) });
+  const cookie = login.headers.get('set-cookie').split(';')[0];
+  const ok = await fetch(base + `/api/photos/${ph.id}/file?thumb=1`, { headers: { Cookie: cookie } });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.headers.get('content-type'), 'image/jpeg');
+  assert.equal(Buffer.from(await ok.arrayBuffer()).toString(), 'jpeg!'); // no thumbnail stored: full image instead
+});

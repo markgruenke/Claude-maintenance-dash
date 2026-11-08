@@ -3,12 +3,13 @@
 
 import {
   mount, el, api, toast, state, isSupervisor, fmtHours, fmtDay, fmtTime, localDate, uid, copyText, confirmDialog, TZ,
-  woLabel, machineName, statusText,
+  woLabel, machineName, statusText, reloadBootstrap,
 } from './core.js';
 import { openLogForm, openNotesForm, currentWorker, canLogForOthers } from './logform.js';
 import { openWorkOrder } from './orders.js';
 import { voiceSupport, listen, resetVoiceCheck } from './voice.js';
 import { backupNow, lastBackupAt } from './team.js';
+import { pickFiles, processImage, savePhotos, addPhotos, thumbStrip } from './photos.js';
 
 let viewDate = localDate();
 let session = null; // active voice session
@@ -20,6 +21,9 @@ const STATUS_WORDS = {
 
 export async function renderToday(root) {
   if (session) return; // never redraw under someone who's talking
+  // Entries can create machines (e.g. a new "Press 6" said by voice): keep
+  // the machine list current so names show everywhere right away.
+  await reloadBootstrap();
   const worker = currentWorker();
   const [report, openOrders] = await Promise.all([
     api(`/api/reports?from=${viewDate}&to=${viewDate}&technician=${encodeURIComponent(worker)}&tz=${encodeURIComponent(TZ)}`),
@@ -147,6 +151,25 @@ function voiceCard(worker, refresh) {
   const example = el('div', { class: 'mic-example' }, '“Press 2, replaced the drive belt, about an hour, parts used drive belt, parts needed belt guard.”');
   const mic = el('button', { class: 'mic-btn', type: 'button', 'aria-label': 'Start talking' }, micIcon());
   const saveBtn = el('button', { class: 'primary big', type: 'button' }, 'Save');
+
+  // Photos taken before saving: shrunk right away, attached to the entry
+  // (as "work done") when it's saved.
+  const staged = [];
+  const stageBox = el('div', { class: 'photo-strip staged', hidden: true });
+  const drawStage = () => {
+    stageBox.hidden = !staged.length;
+    stageBox.replaceChildren(...staged.map((im, i) => el('div', { class: 'photo-thumb' }, [
+      el('img', { src: im.thumb, alt: 'Photo to attach' }),
+      el('button', { type: 'button', class: 'photo-remove', 'aria-label': 'Remove photo', onclick: () => { staged.splice(i, 1); drawStage(); } }, '✕'),
+    ])));
+  };
+  const photoBtn = el('button', { class: 'big', type: 'button', onclick: async () => {
+    const files = await pickFiles();
+    for (const f of files) {
+      try { staged.push(await processImage(f)); drawStage(); } catch (err) { toast(err.message, 5000); }
+    }
+    if (files.length) toast(text.value.trim() ? 'Photo ready: tap Save' : 'Now say or type what you did, then Save');
+  } }, '📷 Photo');
   const tip = el('div', { class: 'voice-tip', hidden: true });
   // When set, the next entry goes onto this work order (from "Assigned to you").
   let target = null;
@@ -165,7 +188,7 @@ function voiceCard(worker, refresh) {
 
   async function save(source) {
     const body = text.value.trim();
-    if (!body) { toast('Say or type what you did first'); return; }
+    if (!body) { toast(staged.length ? 'Say or type what the photo shows, then Save' : 'Say or type what you did first'); return; }
     saveBtn.disabled = true;
     const payload = {
       text: body, date, clientId: uid(), source,
@@ -177,10 +200,23 @@ function voiceCard(worker, refresh) {
       text.value = '';
       target = null;
       drawFor();
-      if (out.queued) { refresh(); return; }
+      if (out.queued) {
+        if (staged.length) toast('Saved without the photos (no connection). Add them to the entry once you’re back online.', 6000);
+        staged.length = 0; drawStage();
+        refresh();
+        return;
+      }
+      let photoCount = 0;
+      if (staged.length && !out.duplicate) {
+        try { photoCount = await savePhotos(staged, { logId: out.log.id, kind: 'done' }); }
+        catch (err) { toast('Entry saved, but a photo wasn’t: ' + err.message, 6000); }
+      }
+      staged.length = 0; drawStage();
+      try { await reloadBootstrap(); } catch { /* names only */ }
       const bits = [out.log && out.workOrder ? (state.machines.find((m) => m.id === out.log.machineId) || {}).name : '',
         out.log && out.log.minutes ? fmtHours(out.log.minutes) : '',
-        out.workOrder ? (STATUS_WORDS[out.workOrder.status] || [''])[0] : ''].filter(Boolean);
+        out.workOrder ? (STATUS_WORDS[out.workOrder.status] || [''])[0] : '',
+        photoCount ? `📷 ${photoCount}` : ''].filter(Boolean);
       toast('Logged' + (bits.length ? ': ' + bits.join(' · ') : ''), 7000, {
         label: 'Undo',
         fn: async () => {
@@ -269,10 +305,12 @@ function voiceCard(worker, refresh) {
     el('div', { class: 'mic-wrap' }, [mic, label, example]),
     tip,
     text,
+    stageBox,
     el('div', { class: 'voice-actions' }, [
       el('button', { class: 'ghost', type: 'button', onclick: () => openLogForm({ mode: 'log', date, onDone: refresh }) }, 'Detailed entry'),
       el('button', { class: 'ghost', type: 'button', onclick: () => openNotesForm({ date, onDone: refresh }) }, 'Paste notes'),
       el('span', { class: 'spacer' }),
+      photoBtn,
       saveBtn,
     ]),
   ]);
@@ -313,15 +351,17 @@ function entryCard(e, refresh) {
         e.partsNeeded.length ? el('span', { class: 'fact warn' }, 'need: ' + e.partsNeeded.join(', ')) : null,
         !isMine(e) ? el('span', { class: 'fact muted' }, e.technician) : null,
       ]),
+      thumbStrip(e.photos, { onChange: refresh, showKind: false }),
     ]),
     el('div', { class: 'entry-actions' }, [
       el('label', { class: 'entered', title: 'Tick once it’s in Plex' }, [check, ' Entered in Plex']),
+      el('button', { class: 'ghost', title: 'Add a photo to this entry', onclick: () => addPhotos({ logId: e.id, kind: 'done' }, { onDone: refresh }) }, '📷'),
       el('button', { class: 'ghost', onclick: async () => {
         const log = (await api(`/api/work-logs?from=${e.date}&to=${e.date}`)).find((l) => l.id === e.id);
         if (log) openLogForm({ mode: 'edit', log, onDone: refresh });
       } }, 'Edit'),
       el('button', { class: 'ghost', onclick: async () => {
-        if (!(await confirmDialog('Delete this entry? Parts it added, and a job it opened that has nothing else logged, go too.'))) return;
+        if (!(await confirmDialog('Delete this entry? Its photos and the parts it added, and a job it opened that has nothing else logged, go too.'))) return;
         await api(`/api/work-logs/${e.id}`, { method: 'DELETE' });
         toast('Entry deleted');
         refresh();

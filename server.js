@@ -42,7 +42,7 @@ const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'same-origin',
-  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
 };
 
 const { HttpError, fail } = api;
@@ -57,13 +57,13 @@ function sendJson(res, status, data, headers = {}) {
   res.end(JSON.stringify(data));
 }
 
-function readBody(req) {
+function readBody(req, limit = 1024 * 1024) {
   return new Promise((resolve, reject) => {
     let data = '';
     let size = 0;
     req.on('data', (chunk) => {
       size += chunk.length;
-      if (size > 1024 * 1024) { // 1 MB is plenty for any email or note
+      if (size > limit) { // 1 MB is plenty for any email or note; photos get more
         reject(new HttpError(413, 'body too large'));
         req.destroy();
         return;
@@ -218,8 +218,19 @@ async function handleApi(req, res, url) {
     }
   }
 
+  // Photo images (for <img> tags): GET /api/photos/:id/file[?thumb=1]
+  if (method === 'GET' && seg[1] === 'photos' && seg[2] && seg[3] === 'file') {
+    if (!store.findPhoto(seg[2])) fail(404, 'not found');
+    const buf = store.readPhotoFile(seg[2], url.searchParams.get('thumb') === '1')
+      || store.readPhotoFile(seg[2], false);
+    if (!buf) fail(404, 'photo file missing');
+    res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=31536000, immutable', ...SECURITY_HEADERS });
+    return res.end(buf);
+  }
+
   // Everything else is shared with the tablet app (lib/api.js).
-  const body = (method === 'GET' || method === 'HEAD') ? {} : await readBody(req);
+  const isPhotoUpload = seg[1] === 'photos' || seg[1] === 'import';
+  const body = (method === 'GET' || method === 'HEAD') ? {} : await readBody(req, isPhotoUpload ? 200 * 1024 * 1024 : 1024 * 1024);
   const out = await api.handle({ method, seg, query: url.searchParams, body, user });
   return sendJson(res, out.status, out.data, out.headers);
 }

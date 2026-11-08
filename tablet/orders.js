@@ -3,7 +3,7 @@
 
 import {
   mount, el, api, toast, state, isSupervisor, openModal, field, select, confirmDialog, reloadBootstrap,
-  fmtHours, fmtDay, fmtWhen, daysAgo, machineName, woLabel, badge, statusText, localDate,
+  fmtHours, fmtDay, fmtWhen, daysAgo, machineName, woLabel, badge, statusText, localDate, periodRanges,
 } from './core.js';
 import { openLogForm } from './logform.js';
 import { openPartForm } from './parts.js';
@@ -11,7 +11,8 @@ import { openPartForm } from './parts.js';
 const PRIORITY_RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
 // 'recent' (default): anything touched in the last 7 days, open or done, so
 // what you just logged on Today is always right here.
-const filters = { status: 'recent', q: '', machineId: '', assignedTo: '', priority: '' };
+// period: '' or a periodRanges() id (Yesterday / This weekend / Last weekend).
+const filters = { status: 'recent', period: '', q: '', machineId: '', assignedTo: '', priority: '' };
 
 export async function renderOrders(root) {
   // Arriving from the Schedule page's workload table pre-filters by person.
@@ -40,8 +41,30 @@ export async function renderOrders(root) {
     if (l.workOrderId && lastActivity.has(l.workOrderId) && l.createdAt > lastActivity.get(l.workOrderId)) lastActivity.set(l.workOrderId, l.createdAt);
   }
   const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+
+  // Days each order had something happen. With work logged on it: the days
+  // the work was done (an entry dated last Saturday counts for Saturday even
+  // if it was typed in later) plus its due date. With nothing logged yet
+  // (e.g. put in on this tab): the day it was created, finished, or is due.
+  const dayOf = (iso) => (iso ? localDate(new Date(iso)) : null);
+  const logDays = new Map();
+  for (const l of logs) {
+    if (!l.workOrderId) continue;
+    if (!logDays.has(l.workOrderId)) logDays.set(l.workOrderId, new Set());
+    logDays.get(l.workOrderId).add(l.date);
+  }
+  const activeDays = new Map(orders.map((w) => {
+    const days = logDays.has(w.id) ? new Set(logDays.get(w.id)) : new Set([dayOf(w.createdAt), dayOf(w.completedAt)].filter(Boolean));
+    if (w.dueDate) days.add(w.dueDate);
+    return [w.id, days];
+  }));
+  const inPeriod = (w, p) => [...activeDays.get(w.id)].some((d) => d >= p.from && d <= p.to);
+  const periods = periodRanges(today);
+  const period = periods.find((p) => p.id === filters.period) || null;
+
   const match = (w) => {
-    if (filters.status === 'recent' && lastActivity.get(w.id) < weekAgo) return false;
+    if (period && !inPeriod(w, period)) return false;
+    if (!period && filters.status === 'recent' && lastActivity.get(w.id) < weekAgo) return false;
     if (filters.status === 'active' && ['completed', 'cancelled'].includes(w.status)) return false;
     if (filters.status === 'overdue' && (!w.dueDate || w.dueDate >= today || ['completed', 'cancelled'].includes(w.status))) return false;
     if (!['recent', 'active', 'all', 'overdue'].includes(filters.status) && w.status !== filters.status) return false;
@@ -55,7 +78,7 @@ export async function renderOrders(root) {
     return true;
   };
   const list = orders.filter(match).sort((a, b) => {
-    if (filters.status === 'recent') return lastActivity.get(b.id).localeCompare(lastActivity.get(a.id));
+    if (period || filters.status === 'recent') return lastActivity.get(b.id).localeCompare(lastActivity.get(a.id));
     const closedA = ['completed', 'cancelled'].includes(a.status), closedB = ['completed', 'cancelled'].includes(b.status);
     if (closedA !== closedB) return closedA ? 1 : -1;
     if (closedA) return String(b.completedAt || b.updatedAt).localeCompare(String(a.completedAt || a.updatedAt));
@@ -110,6 +133,29 @@ export async function renderOrders(root) {
       el('button', { onclick: () => openEmailForm(refresh) }, 'Paste email'),
       el('button', { class: 'primary', onclick: () => openNewOrder({ onDone: refresh }) }, '+ New work order'),
     ]),
+    el('div', { class: 'period-boxes' }, periods.map((p) => {
+      const count = orders.filter((w) => inPeriod(w, p)).length;
+      const on = filters.period === p.id;
+      const dates = p.from === p.to ? fmtDay(p.from) : `${fmtDay(p.from)} – ${fmtDay(p.to)}`;
+      return el('button', {
+        type: 'button', class: 'period-box' + (on ? ' on' : ''), 'aria-pressed': on ? 'true' : 'false',
+        onclick: () => {
+          // Tap again to go back to the full list. A day or weekend shows
+          // everything from then, open or done.
+          filters.period = on ? '' : p.id;
+          filters.status = on ? 'recent' : 'all';
+          refresh();
+        },
+      }, [
+        el('span', { class: 'pb-label' }, p.label),
+        el('span', { class: 'pb-dates' }, dates),
+        el('span', { class: 'pb-count' }, `${count} work order${count === 1 ? '' : 's'}`),
+      ]);
+    })),
+    period ? el('p', { class: 'period-note' }, [
+      `Showing work orders with anything done ${period.from === period.to ? 'on' : 'during'} ${period.label.toLowerCase()} (${period.from === period.to ? fmtDay(period.from) : fmtDay(period.from) + ' – ' + fmtDay(period.to)}): created, worked on, finished or due. `,
+      el('button', { class: 'ghost small-btn', onclick: () => { filters.period = ''; filters.status = 'recent'; refresh(); } }, '✕ Show all'),
+    ]) : null,
     el('div', { class: 'tabs-row' }, statusTabs.map(([v, label]) => el('button', {
       class: 'tab' + (filters.status === v ? ' on' : ''), onclick: () => { filters.status = v; refresh(); },
     }, label))),

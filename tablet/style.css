@@ -242,6 +242,18 @@ input[type=checkbox] { width: 22px; height: 22px; min-height: 0; accent-color: v
 .wo-num { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
 .fact.bad { color: var(--bad-text); }
 .log-on { flex: none; margin: 8px; min-width: 92px; min-height: 44px; font-weight: 650; }
+.period-boxes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
+.period-box {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
+  padding: 12px 14px; border-radius: 12px; min-height: 76px; background: var(--surface-1);
+}
+.period-box.on { background: var(--series-1); color: #fff; border-color: transparent; }
+.period-box.on:hover { background: var(--series-1); filter: brightness(1.08); }
+.period-box .pb-label { font-size: 17px; font-weight: 700; }
+.period-box .pb-dates { font-size: 13px; opacity: .8; }
+.period-box .pb-count { font-size: 13px; font-weight: 600; }
+.period-note { margin: -4px 0 12px; font-size: 14px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 520px) { .period-boxes { grid-template-columns: 1fr; } .period-box { min-height: 0; } }
 .toast-action { margin-left: 14px; min-height: 32px; padding: 4px 12px; background: transparent; color: inherit; border-color: currentColor; font-weight: 700; }
 
 /* ------------------------------------------------------------ log form */

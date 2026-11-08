@@ -51,7 +51,7 @@ Want to look around first? Close the server, run `node scripts/seed.js`
 | Screen | What it's for |
 |---|---|
 | **Today** (tablet) | One big **microphone** button: say what you did, it's logged. **Assigned to you**: open work orders put in on the Work Orders tab (or by email / PM), with a 🎤 **Log** button that puts the entry straight onto that order. Today's entries (time of day, machine, time spent, status, parts) with an **Entered in Plex** checkbox. Orders with no Plex WO# are numbered NO_WO#001, NO_WO#002… |
-| **Work Orders** | Every order with filters (open / in progress / waiting parts / overdue / completed), search, and a detail view to edit everything, add parts and notes, see full history |
+| **Work Orders** | Every order with filters (open / in progress / waiting parts / overdue / completed), search, and a detail view to edit everything, add parts and notes, see full history. **Yesterday / This weekend / Last weekend** boxes at the top show just the orders worked on (or created, finished, due) then; weekends are Fri–Sun |
 | **Parts** | Need to order → on order → received → installed. **Copy order list** for purchasing |
 | **Reports** | *Work list* (end of day) and *Handoff report* for Today, Yesterday, Fri–Sun, Sat–Sun, last 7 days or any dates, for everyone or one person |
 | **Schedule** | Due dates (overdue / today / next 7 days), workload per person, PM schedules |

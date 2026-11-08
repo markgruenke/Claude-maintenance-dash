@@ -82,6 +82,25 @@ export function addDays(dateStr, n) {
   return localDate(d);
 }
 
+/**
+ * The quick date boxes on Work Orders. Weekends are Friday–Sunday (same as
+ * the weekend report). "This weekend" is the current one on Fri/Sat/Sun and
+ * the coming one Mon–Thu; "Last weekend" is the one before it.
+ */
+export function periodRanges(today = localDate()) {
+  const dow = new Date(today + 'T12:00:00').getDay(); // 0 Sun … 6 Sat
+  const thisFri = [5, 6, 0].includes(dow)
+    ? addDays(today, -((dow - 5 + 7) % 7))
+    : addDays(today, 5 - dow);
+  const lastFri = addDays(thisFri, -7);
+  const y = addDays(today, -1);
+  return [
+    { id: 'yesterday', label: 'Yesterday', from: y, to: y },
+    { id: 'thisweekend', label: 'This weekend', from: thisFri, to: addDays(thisFri, 2) },
+    { id: 'lastweekend', label: 'Last weekend', from: lastFri, to: addDays(lastFri, 2) },
+  ];
+}
+
 export function fmtDay(dateStr, opts = {}) {
   if (!dateStr) return '';
   const d = new Date(dateStr.length === 10 ? dateStr + 'T12:00:00' : dateStr);

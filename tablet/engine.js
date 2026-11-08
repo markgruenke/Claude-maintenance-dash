@@ -42,7 +42,7 @@ const EMPTY_DB = {
   pmSchedules: [],   // { id, machineId, title, description, intervalDays, leadDays, nextDueDate,
                      //   lastDoneDate, assignedTo, priority, active, createdAt, updatedAt }
   reportNotes: {},   // { [periodKey]: { text, by, updatedAt } }
-  photos: [],        // { id, workOrderId, logId, kind ('done'|'todo'|'part'), caption, width, height,
+  photos: [],        // { id, workOrderId, logId, partId, kind ('done'|'todo'|'part'), caption, width, height,
                      //   bytes, by, createdAt }  — the image files live outside the JSON (backend)
   technicians: [],   // legacy name list from v1 (names now come from users + work logs)
   meta: { schemaVersion: SCHEMA_VERSION, nextRef: 1, nextNN: 1 },
@@ -647,6 +647,10 @@ function updatePart(partId, fields) {
     part[key] = key === 'quantity' ? (Number(fields.quantity) || 1) : fields[key];
   }
   if ('status' in fields) stampPartStatus(part, part.status);
+  // The part's photos stay with it if it's moved to another work order.
+  if ('workOrderId' in fields) {
+    for (const ph of load().photos) if (ph.partId === part.id) ph.workOrderId = part.workOrderId || null;
+  }
   part.updatedAt = now();
   save();
   return part;
@@ -657,6 +661,8 @@ function deletePart(partId) {
   const idx = d.parts.findIndex((p) => p.id === partId);
   if (idx < 0) return false;
   d.parts.splice(idx, 1);
+  // A part's photos go with it.
+  for (const ph of d.photos.filter((x) => x.partId === partId)) deletePhoto(ph.id);
   save();
   return true;
 }
@@ -737,6 +743,7 @@ function createPhoto(fields, files) {
     id: id(),
     workOrderId: fields.workOrderId || null,
     logId: fields.logId || null,
+    partId: fields.partId || null,
     kind: PHOTO_KINDS.includes(fields.kind) ? fields.kind : 'done',
     caption: String(fields.caption || '').slice(0, 300),
     width: Number(fields.width) || null,
@@ -756,7 +763,7 @@ function updatePhoto(photoId, fields) {
   if (!photo) return null;
   if ('kind' in fields && PHOTO_KINDS.includes(fields.kind)) photo.kind = fields.kind;
   if ('caption' in fields) photo.caption = String(fields.caption || '').slice(0, 300);
-  for (const k of ['workOrderId', 'logId']) if (k in fields) photo[k] = fields[k] || null;
+  for (const k of ['workOrderId', 'logId', 'partId']) if (k in fields) photo[k] = fields[k] || null;
   save();
   return photo;
 }
@@ -1512,7 +1519,8 @@ function buildReport({ from, to, technician = '', tz = '' }) {
   // ---- parts
   const withContext = (p) => {
     const wo = p.workOrderId ? store.findWorkOrder(p.workOrderId) : null;
-    return { ...p, line: partLine(p), machineName: machineName(p.machineId), workOrderLabel: woLabel(wo) };
+    return { ...p, line: partLine(p), machineName: machineName(p.machineId), workOrderLabel: woLabel(wo),
+      photoCount: store.listPhotos().filter((ph) => ph.partId === p.id).length };
   };
   const partsNeeded = parts.filter((p) => p.status === 'needed').map(withContext);
   const partsOrdered = parts.filter((p) => p.status === 'ordered').map(withContext);
@@ -2317,6 +2325,7 @@ async function handle({ method, seg, query, body = {}, user }) {
       let list = store.listPhotos();
       if (q('workOrderId')) list = list.filter((ph) => ph.workOrderId === q('workOrderId'));
       if (q('logId')) list = list.filter((ph) => ph.logId === q('logId'));
+      if (q('partId')) list = list.filter((ph) => ph.partId === q('partId'));
       return reply(200, list);
     }
     if (method === 'POST' && !seg[2]) {
@@ -2325,12 +2334,16 @@ async function handle({ method, seg, query, body = {}, user }) {
       if (body.full.length > 12 * 1024 * 1024) fail(413, 'Photo is too large');
       let workOrderId = body.workOrderId || null;
       const log = body.logId ? store.findWorkLog(body.logId) : null;
+      const part = body.partId ? store.findPart(body.partId) : null;
+      if (body.partId && !part) fail(400, 'That part no longer exists');
+      if (part && !workOrderId) workOrderId = part.workOrderId;
       if (body.logId && !log) fail(400, 'That entry no longer exists');
       if (log && !workOrderId) workOrderId = log.workOrderId;
       if (workOrderId && !store.findWorkOrder(workOrderId)) fail(400, 'That work order no longer exists');
-      if (!workOrderId && !log) fail(400, 'Attach the photo to a work order or an entry');
+      if (!workOrderId && !log && !part) fail(400, 'Attach the photo to a work order, an entry or a part');
       const photo = store.createPhoto({
-        workOrderId, logId: log ? log.id : null, kind: body.kind, caption: body.caption,
+        workOrderId, logId: log ? log.id : null, partId: part ? part.id : null,
+        kind: part ? 'part' : body.kind, caption: body.caption,
         width: body.width, height: body.height, bytes: Math.round(body.full.length * 0.75), by: user.name,
       }, { full: body.full, thumb: isImage(body.thumb) ? body.thumb : null });
       return reply(201, photo);

@@ -269,6 +269,9 @@ input[type=checkbox] { width: 22px; height: 22px; min-height: 0; accent-color: v
   position: absolute; top: 4px; right: 4px; min-height: 0; width: 26px; height: 26px; padding: 0;
   border-radius: 50%; background: rgba(0,0,0,.6); color: #fff; border: 0; font-size: 13px;
 }
+.part-photos { min-width: 124px; }
+.part-photos .photo-strip { margin-top: 6px; gap: 6px; flex-wrap: nowrap; }
+.part-photos .photo-thumb { width: 56px; height: 56px; border-radius: 8px; }
 .photo-groups { display: flex; flex-direction: column; gap: 10px; }
 .photo-group .photo-strip { margin-top: 4px; }
 .kind-picks { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }

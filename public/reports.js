@@ -145,6 +145,7 @@ function partList(list) {
   return el('ul', { class: 'rlist' }, list.map((p) => el('li', {}, [
     el('strong', {}, p.line), p.machineName ? ` — ${p.machineName}` : '', p.workOrderLabel ? el('span', { class: 'muted' }, ` (${p.workOrderLabel})`) : null,
     p.vendor ? el('span', { class: 'muted' }, ` · ${p.vendor}`) : null,
+    p.photoCount ? el('span', { class: 'muted' }, ` · 📷 ${p.photoCount}`) : null,
   ])));
 }
 

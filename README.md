@@ -105,7 +105,9 @@ or type as usual: the photos go on that entry as "work done". Each entry also
 has a 📷 button to add one later. On a work order, **📷 Add photo** asks what
 it shows first: **Work done**, **Needs doing** or **Part needed**. Tap any
 thumbnail for full size, to change what it shows, add a caption (e.g. a part
-number) or delete it. Photos are shrunk on the device (longest side 1600 px,
+number) or delete it. On the **Parts** page, each part has a 📷 button, and
+Add/Edit part has a photo box (nameplate, part number, the broken part); part
+photos also show on the part's work order under "Part needed". Photos are shrunk on the device (longest side 1600 px,
 a few hundred KB) and are included in backups.
 
 **Detailed entry** (all fields as a form) and **Paste notes** are still there

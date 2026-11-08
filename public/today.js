@@ -207,11 +207,19 @@ function voiceCard(worker, refresh) {
         return;
       }
       let photoCount = 0;
+      let photoErr = '';
+      const stagedCount = staged.length;
       if (staged.length && !out.duplicate) {
         try { photoCount = await savePhotos(staged, { logId: out.log.id, kind: 'done' }); }
-        catch (err) { toast('Entry saved, but a photo wasn’t: ' + err.message, 6000); }
+        catch (err) { photoErr = err.message; }
       }
       staged.length = 0; drawStage();
+      if (photoErr) {
+        // Say so plainly (don't let the "Logged" message cover it up).
+        toast(`Entry saved, but ${stagedCount - photoCount} photo${stagedCount - photoCount === 1 ? '' : 's'} didn’t save: ${photoErr}. Use the entry’s 📷 to try again.`, 9000);
+        refresh();
+        return;
+      }
       try { await reloadBootstrap(); } catch { /* names only */ }
       const bits = [out.log && out.workOrder ? (state.machines.find((m) => m.id === out.log.machineId) || {}).name : '',
         out.log && out.log.minutes ? fmtHours(out.log.minutes) : '',

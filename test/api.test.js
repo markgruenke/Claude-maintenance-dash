@@ -449,3 +449,29 @@ test('photo files are served to signed-in users only', async () => {
   assert.equal(ok.headers.get('content-type'), 'image/jpeg');
   assert.equal(Buffer.from(await ok.arrayBuffer()).toString(), 'jpeg!'); // no thumbnail stored: full image instead
 });
+
+test('part photos: on the part request, shown on its work order, follow it, go when it goes', async () => {
+  const img = 'data:image/jpeg;base64,' + Buffer.from('part photo').toString('base64');
+  const wo1 = (await sup('POST', '/api/work-orders', { title: 'Mill 2 coolant pump' })).data;
+  const wo2 = (await sup('POST', '/api/work-orders', { title: 'Mill 2 spare pump stock' })).data;
+  const part = (await tech('POST', '/api/parts', { name: 'coolant pump', partNumber: 'CP-4410', workOrderId: wo1.id })).data;
+  const ph = (await tech('POST', '/api/photos', { partId: part.id, kind: 'done', full: img })).data;
+  assert.equal(ph.partId, part.id);
+  assert.equal(ph.kind, 'part'); // a part's photo is always "Part needed"
+  assert.equal(ph.workOrderId, wo1.id); // so it shows on the work order too
+  assert.equal((await sup('GET', '/api/photos?partId=' + part.id)).data.length, 1);
+  // Move the part to another work order: the photo goes along.
+  await tech('PATCH', '/api/parts/' + part.id, { workOrderId: wo2.id });
+  assert.equal((await sup('GET', '/api/work-orders/' + wo2.id)).data.photos[0].id, ph.id);
+  assert.equal((await sup('GET', '/api/work-orders/' + wo1.id)).data.photos.length, 0);
+  // A part with no work order can still have photos.
+  const loose = (await tech('POST', '/api/parts', { name: 'spare fuses' })).data;
+  assert.equal((await tech('POST', '/api/photos', { partId: loose.id, full: img })).status, 201);
+  assert.equal((await tech('POST', '/api/photos', { partId: 'nope', full: img })).status, 400);
+  // Delete the part: its photos go too.
+  await tech('DELETE', '/api/parts/' + part.id);
+  assert.equal((await sup('GET', '/api/photos?partId=' + part.id)).data.length, 0);
+  // Handoff report shows the photo count on parts to order.
+  const r = (await sup('GET', '/api/reports?from=2026-11-01&to=2026-11-08&tz=UTC')).data;
+  assert.equal(r.partsNeeded.find((p) => p.name === 'spare fuses').photoCount, 1);
+});

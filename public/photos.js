@@ -59,11 +59,11 @@ export async function processImage(file) {
   }
 }
 
-/** Save already-processed images onto an entry and/or work order. */
-export async function savePhotos(images, { workOrderId = null, logId = null, kind = 'done', caption = '' } = {}) {
+/** Save already-processed images onto an entry, a work order and/or a part. */
+export async function savePhotos(images, { workOrderId = null, logId = null, partId = null, kind = 'done', caption = '' } = {}) {
   let saved = 0;
   for (const im of images) {
-    await api('/api/photos', { method: 'POST', body: { workOrderId, logId, kind, caption, ...im } });
+    await api('/api/photos', { method: 'POST', body: { workOrderId, logId, partId, kind, caption, ...im } });
     saved++;
   }
   return saved;

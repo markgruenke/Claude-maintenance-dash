@@ -71,37 +71,39 @@ export async function openLogForm(o = {}) {
       }, n)));
     };
 
-    // ---- job (work order)
-    const jobSelect = el('select', { class: 'big' });
-    const newTitle = el('input', { placeholder: 'Short title, e.g. "Coolant pump not priming"', class: 'big' });
-    const orderNumber = el('input', { placeholder: 'Company WO# (optional)', inputmode: 'numeric' });
+    // ---- job: free text. Suggestions list open work orders; picking one
+    // (or typing its number) puts the entry on it. Anything else becomes
+    // the job's name.
+    const listId = 'job-options-' + Math.random().toString(36).slice(2, 8);
+    const jobList = el('datalist', { id: listId });
+    const jobInput = el('input', {
+      class: 'big', list: listId, autocomplete: 'off',
+      value: presetWo ? presetWo.title : '',
+      placeholder: mode === 'edit' ? 'What the job is' : 'What the job is (leave blank to use the first words of the notes)',
+    });
+    const initialJob = jobInput.value;
+    const plexNumber = el('input', {
+      value: presetWo ? presetWo.orderNumber || '' : '', placeholder: 'e.g. 10288', inputmode: 'numeric', autocomplete: 'off',
+    });
+    const initialPlex = plexNumber.value;
     const priority = select(state.priorities, 'medium');
-    const newJobBox = el('div', { class: 'newjob' }, [
-      field('New job title', newTitle),
-      el('div', { class: 'row2' }, [field('Company WO#', orderNumber), field('Priority', priority)]),
-    ]);
-
-    const fillJobs = (keep) => {
+    const fillJobs = () => {
       const mName = machineInput.value.trim().toLowerCase();
       const m = state.machines.find((x) => x.name.toLowerCase() === mName);
-      const relevant = openOrders.filter((w) => !mName || (m && w.machineId === m.id));
-      const opts = [
-        ...relevant.map((w) => [w.id, `${woLabel(w)} — ${w.title} (${statusText(w.status)})`]),
-        ...(mode === 'edit' ? [] : [['__new', '+ New job']]),
-        ['', 'No work order (general / misc work)'],
-      ];
-      // Keep the preset order selectable even if the machine was changed.
-      if (presetWo && !relevant.some((w) => w.id === presetWo.id)) opts.unshift([presetWo.id, `${woLabel(presetWo)} — ${presetWo.title} (${statusText(presetWo.status)})`]);
-      jobSelect.replaceChildren(...opts.map(([v, t]) => el('option', { value: v }, t)));
-      if (keep !== undefined && opts.some(([v]) => v === keep)) jobSelect.value = keep;
-      else jobSelect.value = relevant.length ? relevant[0].id : (mode === 'edit' ? '' : '__new');
-      newJobBox.style.display = jobSelect.value === '__new' ? '' : 'none';
+      // This machine's open jobs first, then the rest.
+      const list = [...openOrders].sort((x, y) => (m && y.machineId === m.id ? 1 : 0) - (m && x.machineId === m.id ? 1 : 0));
+      if (presetWo && !list.some((w) => w.id === presetWo.id)) list.unshift(presetWo);
+      jobList.replaceChildren(...list.map((w) => el('option', {
+        value: `${woLabel(w)} — ${w.title}`,
+      }, [machineName(w.machineId), statusText(w.status)].filter(Boolean).join(' · '))));
     };
     const onMachineChange = () => { fillJobs(); drawChips(); };
     machineInput.addEventListener('change', onMachineChange);
-    jobSelect.addEventListener('change', () => { newJobBox.style.display = jobSelect.value === '__new' ? '' : 'none'; });
-    fillJobs(presetWo ? presetWo.id : (log ? (log.workOrderId || '') : undefined));
+    fillJobs();
     drawChips();
+    const jobHint = mode === 'edit'
+      ? 'Type anything. Pick a suggestion (or type its number, like NO_WO#003) to move this entry onto that work order.'
+      : 'Type anything, or pick one of your open work orders.';
 
     // ---- notes
     const notes = el('textarea', {
@@ -157,12 +159,6 @@ export async function openLogForm(o = {}) {
     const saveBtn = el('button', { class: 'primary big', type: 'button' }, 'Save');
 
     async function save() {
-      const job = jobSelect.value;
-      if (job === '__new' && !newTitle.value.trim() && !notes.value.trim()) {
-        toast('Give the new job a title (or describe the work)');
-        newTitle.focus();
-        return;
-      }
       if (!notes.value.trim()) {
         toast('Write a few words about what you did');
         notes.focus();
@@ -175,12 +171,13 @@ export async function openLogForm(o = {}) {
         notes: notes.value.trim(),
         ...(tech ? { technician: tech.value.trim() } : {}),
       };
-      if (job === '__new') {
-        body.newOrderTitle = newTitle.value.trim();
-        body.orderNumber = orderNumber.value.trim();
+      const jobText = jobInput.value.trim();
+      if (mode === 'log') {
+        // Opened from a work order and its name left as is: log on that order.
+        if (presetWo && jobText === initialJob) body.workOrderId = presetWo.id;
+        else body.jobText = jobText;
+        if (plexNumber.value.trim()) body.orderNumber = plexNumber.value.trim();
         body.priority = priority.value;
-      } else if (job) {
-        body.workOrderId = job;
       }
       body.minutes = minutes == null ? 0 : minutes;
       if (mode === 'log') {
@@ -195,11 +192,12 @@ export async function openLogForm(o = {}) {
         else {
           const patch = {
             date: body.date, machineName: body.machineName, notes: body.notes, minutes: body.minutes,
-            workOrderId: job && job !== '__new' ? job : null,
             partsUsed: parsePartList(partsUsed.value),
             partsNeeded: parsePartList(partsNeeded.value),
           };
-          if (patch.workOrderId && result.value && result.value !== initialStatus) patch.statusAfter = result.value;
+          if (jobText && jobText !== initialJob) patch.jobText = jobText;
+          if (plexNumber.value.trim() !== initialPlex) patch.orderNumber = plexNumber.value.trim();
+          if (result.value && result.value !== initialStatus) patch.statusAfter = result.value;
           if (tech) patch.technician = body.technician;
           out = await api(`/api/work-logs/${log.id}`, { method: 'PATCH', body: patch });
         }
@@ -223,8 +221,12 @@ export async function openLogForm(o = {}) {
     return el('div', { class: 'logform' }, [
       field('Machine', machineInput),
       chipBox,
-      field('Job', jobSelect),
-      newJobBox,
+      field('Job', jobInput, jobHint),
+      jobList,
+      el('div', { class: 'row2' }, [
+        field('Plex WO# (optional)', plexNumber, mode === 'edit' ? 'Add it once you have it; the job then shows this number' : 'Leave blank to get a NO_WO# number'),
+        mode === 'log' ? field('Priority', priority) : el('span'),
+      ]),
       field('What was done', notes),
       el('div', { class: 'fld' }, [
         el('span', { class: 'fld-label' }, 'Time spent (optional)'),
@@ -260,7 +262,7 @@ export function openNotesForm({ onDone, date } = {}) {
         preview.replaceChildren(el('div', { class: 'preview' }, [
           el('h4', {}, 'What it picked up'),
           row('Machine', p.machineName),
-          row('Company WO#', p.orderNumber),
+          row('WO#', p.orderNumber),
           row('Time spent', p.minutes != null ? `${p.minutes} min` : ''),
           row('Parts used', p.partsUsed.join(', ')),
           row('Parts needed', p.partsNeeded.join(', ')),

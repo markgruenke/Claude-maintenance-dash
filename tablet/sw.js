@@ -4,7 +4,7 @@
    published, the browser notices sw.js changed, caches the whole new set, and
    the app switches over on its next launch (never a mix of old and new). */
 
-const VERSION = '0af129e8d157';
+const VERSION = '1017547db78e';
 const CACHE = 'maintenance-log-' + VERSION;
 const FILES = ["./","app.js","boot-local.js","core.js","dashboard.js","engine.js","icon.svg","index.html","logform.js","manifest.webmanifest","orders.js","parts.js","reports.js","schedule.js","style.css","team.js","today.js","voice.js"];
 

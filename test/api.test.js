@@ -154,7 +154,7 @@ test('voice entry: one sentence becomes a logged entry; resends are ignored; und
   assert.equal(noTime.data.workOrder.status, 'completed');
 });
 
-test('orders with no company WO# are numbered WO_NN_001, 002…; Undo frees the number', async () => {
+test('orders with no company WO# are numbered NO_WO#001, 002…; Undo frees the number', async () => {
   const store = require('../lib/store');
   const say = (text, clientId) => tech('POST', '/api/ingest/notes', { text, date: '2026-11-04', clientId });
   const a = await say('Lathe 7 cleaned the chip tray', 'n-1');
@@ -162,7 +162,7 @@ test('orders with no company WO# are numbered WO_NN_001, 002…; Undo frees the 
   const na = a.data.workOrder.nn;
   assert.ok(na >= 1);
   assert.equal(b.data.workOrder.nn, na + 1);
-  assert.equal(store.woLabel(b.data.workOrder), `WO_NN_${String(na + 1).padStart(3, '0')}`);
+  assert.equal(store.woLabel(b.data.workOrder), `NO_WO#${String(na + 1).padStart(3, '0')}`);
   // A company WO# means no NN number; that order shows its own number.
   const c = await say('work order 55501 Saw 3 new blade', 'n-3');
   assert.equal(c.data.workOrder.nn, null);
@@ -343,7 +343,7 @@ test('logging onto a chosen work order (Assigned to you → 🎤 Log)', async ()
     title: 'Replace guard on Press 6', machineName: 'Press 6', assignedTo: 'Dave', priority: 'high',
   })).data;
   assert.equal(wo.source, 'manual');
-  assert.ok(wo.nn); // no company WO#, so it gets a WO_NN number
+  assert.ok(wo.nn); // no company WO#, so it gets a NO_WO number
   // Dave logs on it; what he says mentions another machine and no WO#,
   // but the chosen order (and its machine) wins.
   const r = await tech('POST', '/api/ingest/notes', {
@@ -360,4 +360,47 @@ test('logging onto a chosen work order (Assigned to you → 🎤 Log)', async ()
   });
   assert.equal(done.data.workOrder.status, 'completed');
   assert.equal((await tech('POST', '/api/ingest/notes', { text: 'x', clientId: 't-3', workOrderId: 'nope' })).status, 400);
+});
+
+test('Edit: typed Job text renames the entry’s own job, never a shared one; Plex WO# and NO_WO numbers', async () => {
+  const store = require('../lib/store');
+  const say = (text, clientId) => tech('POST', '/api/ingest/notes', { text, date: '2026-11-06', clientId });
+  const get = async (id) => (await sup('GET', '/api/work-orders/' + id)).data.workOrder;
+
+  // 1. Own job (only this entry): typing a new name renames it.
+  const a = await say('Lathe 4 squared up the tailstock', 'j-1');
+  await tech('PATCH', '/api/work-logs/' + a.data.log.id, { jobText: 'Tailstock alignment' });
+  assert.equal((await get(a.data.workOrder.id)).title, 'Tailstock alignment');
+
+  // 2. Shared job (put in for Dave by the supervisor): typing a different name
+  //    gives the entry its own new job, and leaves the supervisor's order alone.
+  const shared = (await sup('POST', '/api/work-orders', { title: 'Replace guard on Saw 9', machineName: 'Saw 9', assignedTo: 'Dave' })).data;
+  const b = await tech('POST', '/api/ingest/notes', { text: 'looked at it', date: '2026-11-06', clientId: 'j-2', workOrderId: shared.id });
+  const moved = (await tech('PATCH', '/api/work-logs/' + b.data.log.id, { jobText: 'Saw 9 blade tension' })).data;
+  assert.notEqual(moved.workOrderId, shared.id);
+  assert.equal((await get(shared.id)).title, 'Replace guard on Saw 9');
+  assert.equal((await get(moved.workOrderId)).title, 'Saw 9 blade tension');
+  assert.ok((await get(moved.workOrderId)).nn); // new job, no Plex number -> NO_WO number
+
+  // 3. Picking a suggestion ("NO_WO#… — title") moves the entry onto that order,
+  //    and its old own job (now empty) is removed.
+  const c = await say('Lathe 4 checked the coolant', 'j-3');
+  const oldJob = c.data.workOrder.id;
+  const pick = `${store.woLabel(await get(a.data.workOrder.id))} — Tailstock alignment`;
+  const onA = (await tech('PATCH', '/api/work-logs/' + c.data.log.id, { jobText: pick })).data;
+  assert.equal(onA.workOrderId, a.data.workOrder.id);
+  assert.equal((await sup('GET', '/api/work-orders/' + oldJob)).status, 404);
+
+  // 4. Adding the Plex WO# later: the job shows it instead of its NO_WO number.
+  await tech('PATCH', '/api/work-logs/' + a.data.log.id, { orderNumber: '77001' });
+  assert.equal(store.woLabel(await get(a.data.workOrder.id)), 'WO#77001');
+
+  // 5. Saying our own number puts the entry on that job.
+  const nnJob = await get(moved.workOrderId);
+  const d = await say(`no work order ${nnJob.nn}, tightened the blade`, 'j-4');
+  assert.equal(d.data.workOrder.id, nnJob.id);
+  // …and a NO_WO number that doesn't exist isn't stored as a Plex number.
+  const e = await say('no work order 999, swept up', 'j-5');
+  assert.equal(e.data.workOrder.orderNumber, '');
+  assert.ok(e.data.workOrder.nn);
 });

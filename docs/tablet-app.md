@@ -9,7 +9,7 @@ entirely in your tablet's browser:
   app's files).
 - **Opens like an app** from a home-screen icon.
 - **Same features** as the server version: voice/typed entries, end-of-day
-  list with "Entered" checkboxes, weekend handoff report, parts, PM schedule,
+  list with "Entered in Plex" checkboxes, weekend handoff report, parts, PM schedule,
   dashboard. Just no accounts: it's your log.
 - **The big mic button works** (the page is served over https). Chrome's
   speech recognition sends audio to Google to transcribe, so it needs a

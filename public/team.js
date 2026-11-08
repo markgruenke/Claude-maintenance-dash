@@ -168,7 +168,7 @@ export async function renderTeam(root) {
 function machinesCard(refresh) {
   return el('div', { class: 'card' }, [
     el('h2', {}, ['Machines', el('span', { class: 'spacer' }), el('button', { onclick: () => openMachineForm({ onDone: refresh }) }, '+ Add machine')]),
-    el('p', { class: 'desc' }, 'Machines are also added automatically the first time someone logs work on a new one. Fix names here so they match the company system.'),
+    el('p', { class: 'desc' }, 'Machines are also added automatically the first time someone logs work on a new one. Fix names here so they match Plex.'),
     state.machines.length ? el('table', { class: 'data' }, [
       el('thead', {}, el('tr', {}, ['Machine', 'Area', 'Notes', ''].map((h) => el('th', {}, h)))),
       el('tbody', {}, [...state.machines].sort((a, b) => a.name.localeCompare(b.name)).map((m) => el('tr', {}, [

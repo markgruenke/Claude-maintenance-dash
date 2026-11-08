@@ -110,8 +110,8 @@ function migrate(d) {
     d.meta.schemaVersion = 2;
   }
   if (d.meta.schemaVersion < 3) {
-    // v2 -> v3: orders with no company WO# get their own number,
-    // WO_NN_001, WO_NN_002… in the order they were created.
+    // v2 -> v3: orders with no company WO# get their own number
+    // (shown NO_WO#001, NO_WO#002…) in the order they were created.
     let nn = 1;
     for (const wo of [...d.workOrders].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
       if (!wo.orderNumber && !wo.nn) wo.nn = nn++;
@@ -359,14 +359,38 @@ function findWorkOrderByNumber(orderNumber) {
 }
 
 /**
- * Display number for an order: the company WO# when there is one, otherwise
- * its own "no number" number, WO_NN_001, WO_NN_002, …
+ * Display number for an order: the company (Plex) WO# when there is one,
+ * otherwise its own "no work order number" number: NO_WO#001, NO_WO#002, …
  */
 function woLabel(wo) {
   if (!wo) return '';
   if (wo.orderNumber) return `WO#${wo.orderNumber}`;
-  if (wo.nn) return `WO_NN_${String(wo.nn).padStart(3, '0')}`;
+  if (wo.nn) return `NO_WO#${String(wo.nn).padStart(3, '0')}`;
   return `M-${wo.ref}`;
+}
+
+const NO_WO_RE = /^no[\s_-]*w\.?\s*o\.?\s*(?:#|number|num|no\.?)?\s*(\d{1,6})$/i;
+
+/** Is this text one of our own numbers ("NO_WO#003", "no wo 3")? Returns the number or null. */
+function parseNoWo(text) {
+  const m = String(text || '').trim().match(NO_WO_RE);
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * Find an order from how someone wrote or said its number: "NO_WO#003",
+ * "WO#10288", "wo 10288", or just "10288" / "3". A bare number is a Plex
+ * number first; if no order has that Plex number, it's one of our own.
+ */
+function findWorkOrderByRef(text) {
+  const t = String(text || '').trim();
+  if (!t) return null;
+  const nn = parseNoWo(t);
+  if (nn) return load().workOrders.find((w) => w.nn === nn && !w.orderNumber) || null;
+  const m = t.match(/^(?:w\.?\s*o\.?\s*(?:#|number|num|no\.?)?\s*)?(\d{1,10})$/i);
+  if (!m) return null;
+  return findWorkOrderByNumber(m[1])
+    || load().workOrders.find((w) => w.nn === Number(m[1]) && !w.orderNumber) || null;
 }
 
 function createWorkOrder(fields, by = '') {
@@ -511,7 +535,7 @@ function updateWorkLog(logId, fields) {
   const log = findWorkLog(logId);
   if (!log) return null;
   const allowed = ['workOrderId', 'machineId', 'technician', 'userId', 'date', 'minutes', 'notes',
-    'running', 'startedAt', 'endedAt', 'entered'];
+    'running', 'startedAt', 'endedAt', 'entered', 'createdOrderId'];
   for (const key of allowed) {
     if (!(key in fields)) continue;
     if (key === 'date' && !isDateStr(fields.date)) continue;
@@ -708,7 +732,7 @@ module.exports = {
   listUsers, findUser, findUserByName, createUser, updateUser, publicUser,
   createSession, findSession, touchSession, deleteSessions,
   listMachines, findMachine, resolveMachine, createMachine, updateMachine,
-  woLabel, listWorkOrders, findWorkOrder, findWorkOrderByNumber, createWorkOrder, updateWorkOrder,
+  woLabel, parseNoWo, findWorkOrderByRef, listWorkOrders, findWorkOrder, findWorkOrderByNumber, createWorkOrder, updateWorkOrder,
   addWorkOrderNote, deleteWorkOrder,
   listWorkLogs, findWorkLog, findWorkLogByClientId, createWorkLog, updateWorkLog, deleteWorkLog,
   listParts, findPart, createPart, updatePart, deletePart,
@@ -742,9 +766,14 @@ const PRIORITY_WORDS = [
 /** Pull a work order number out of text: "WO#12345", "WO-12345",
  *  "Work Order 12345", "Order #12345". */
 function extractOrderNumber(text) {
+  // Our own numbers for jobs with no Plex WO#: "NO_WO#003", "no work order 3",
+  // "no WO number 3". Returned as NO_WO#003 so it's never mistaken for Plex.
+  const own = text.match(/\bno[\s_-]*(?:w\.?\s*o\.?|work\s*order)\s*(?:#|number|num|no\.?)?\s*(\d{1,6})\b/i);
+  if (own) return `NO_WO#${own[1].padStart(3, '0')}`;
   const patterns = [
     /\bW\.?O\.?\s*[#:-]?\s*(\d{3,})/i,
-    /\bwork\s*order\s*(?:number|no\.?|num)?\s*[#:-]?\s*(\d{3,})/i,
+    // "work order 3" can be short: it may be one of our own NO_WO numbers.
+    /\bwork\s*order\s*(?:number|no\.?|num)?\s*[#:-]?\s*(\d{1,})/i,
     /\border\s*[#:]\s*(\d{3,})/i,
   ];
   for (const re of patterns) {
@@ -1717,6 +1746,81 @@ function matchOpenJob(machine, text) {
   return best;
 }
 
+const sameText = (a, b) => store.normalizeName(a) === store.normalizeName(b);
+
+/**
+ * What a typed Job box means. "NO_WO#003 — Press 2 …" (a picked suggestion),
+ * "NO_WO#003", "WO#10288" or a bare number -> that order; the exact title of
+ * the current or another open order -> that order; anything else -> the title
+ * for a job.
+ */
+function resolveJobText(text, current = null) {
+  const t = String(text || '').trim();
+  if (!t) return {};
+  const head = t.split(/\s+[—–]\s+|\s+-\s+/)[0].trim();
+  const byRef = store.findWorkOrderByRef(head);
+  if (byRef) return { wo: byRef };
+  if (current && sameText(current.title, t)) return { wo: current };
+  const same = store.listWorkOrders().find((w) => !store.CLOSED.includes(w.status) && sameText(w.title, t));
+  if (same) return { wo: same };
+  return { title: t.slice(0, 120) };
+}
+
+/** An order this entry created that nothing else has been logged on. */
+function isOwnJob(wo, log) {
+  return !!wo && log.createdOrderId === wo.id
+    && !store.listWorkLogs().some((l) => l.workOrderId === wo.id && l.id !== log.id);
+}
+
+/**
+ * Edit screen: apply the typed Job text and Plex WO# to an entry. Returns
+ * the fields to save on the entry ({ workOrderId, createdOrderId }).
+ * Renames the entry's own job; never renames a job shared with other
+ * entries or put in for you (the entry gets a new job instead).
+ */
+function applyJobEdit(log, body, user) {
+  const out = {};
+  let wo = log.workOrderId ? store.findWorkOrder(log.workOrderId) : null;
+  const machineId = body.machineId !== undefined ? body.machineId : log.machineId;
+  const newJob = (fields) => {
+    const created = store.createWorkOrder({
+      machineId, source: log.source || 'typed', assignedTo: log.technician, status: 'in_progress', ...fields,
+    }, user.name);
+    out.createdOrderId = created.id;
+    return created;
+  };
+
+  if (body.jobText !== undefined && String(body.jobText).trim()) {
+    const r = resolveJobText(body.jobText, wo);
+    if (r.wo) wo = r.wo;
+    else if (wo && isOwnJob(wo, log)) wo = store.updateWorkOrder(wo.id, { title: r.title }, user.name);
+    else wo = newJob({ title: r.title });
+  }
+
+  if (body.orderNumber !== undefined) {
+    const num = String(body.orderNumber || '').trim().replace(/^w\.?\s*o\.?\s*#?\s*/i, '');
+    if (num && (!wo || wo.orderNumber !== num)) {
+      const other = store.findWorkOrderByNumber(num);
+      if (other && (!wo || other.id !== wo.id)) wo = other; // that Plex order already exists: put the entry on it
+      else if (wo) wo = store.updateWorkOrder(wo.id, { orderNumber: num }, user.name);
+      else wo = newJob({ title: titleFrom(log.notes, 'General work'), orderNumber: num });
+    } else if (!num && wo && wo.orderNumber) {
+      wo = store.updateWorkOrder(wo.id, { orderNumber: '' }, user.name);
+    }
+  }
+
+  if (wo && wo.id !== log.workOrderId) {
+    out.workOrderId = wo.id;
+    // The entry's old job was only there for this entry: don't leave it behind empty.
+    const old = log.workOrderId ? store.findWorkOrder(log.workOrderId) : null;
+    if (old && isOwnJob(old, log)) {
+      store.updateWorkLog(log.id, { workOrderId: wo.id });
+      store.deleteWorkOrder(old.id);
+    }
+  }
+  return out;
+}
+
 /** A short job title from free text: the first sentence, trimmed. */
 function titleFrom(text, fallback) {
   // First sentence of the first line. (No regex lookbehind: older iPads'
@@ -1753,8 +1857,18 @@ function commitWork(body, user) {
     workOrder = store.findWorkOrder(body.workOrderId);
     if (!workOrder) fail(400, 'That work order no longer exists');
   }
-  const orderNumber = String(body.orderNumber || '').trim();
-  if (!workOrder && orderNumber) workOrder = store.findWorkOrderByNumber(orderNumber);
+  // Job typed into the form: an existing order (picked suggestion, its
+  // number, or its exact title) or the title for a new one.
+  let newOrderTitle = String(body.newOrderTitle || '').trim();
+  if (!workOrder && body.jobText !== undefined) {
+    const r = resolveJobText(body.jobText);
+    if (r.wo) workOrder = r.wo;
+    else if (r.title) newOrderTitle = r.title;
+  }
+  let orderNumber = String(body.orderNumber || '').trim();
+  if (!workOrder && orderNumber) workOrder = store.findWorkOrderByRef(orderNumber);
+  // One of our own numbers that doesn't exist (yet) is not a Plex number.
+  if (!workOrder && store.parseNoWo(orderNumber)) orderNumber = '';
   if (!machine && workOrder && workOrder.machineId) machine = store.findMachine(workOrder.machineId);
 
   if (!workOrder && body.attachToOpen && machine) {
@@ -1762,12 +1876,12 @@ function commitWork(body, user) {
   }
   const notes = String(body.notes || '').trim();
   // Entries from Today (alwaysJob) always end up on a work order, so they
-  // show in Work Orders; no company WO# means it gets its own WO_NN_### number.
-  if (!workOrder && (body.alwaysJob || machine || body.newOrderTitle || orderNumber)) {
+  // show in Work Orders; no Plex WO# means it gets its own NO_WO#### number.
+  if (!workOrder && (body.alwaysJob || machine || newOrderTitle || orderNumber)) {
     workOrder = store.createWorkOrder({
       machineId: machine ? machine.id : null,
       orderNumber,
-      title: String(body.newOrderTitle || '').trim() || titleFrom(notes, machine ? 'Work on ' + machine.name : 'General work'),
+      title: newOrderTitle || titleFrom(notes, machine ? 'Work on ' + machine.name : 'General work'),
       description: notes,
       priority: body.priority,
       source: body.source || 'tablet',
@@ -2034,7 +2148,8 @@ async function handle({ method, seg, query, body = {}, user }) {
     if (method === 'POST' && !seg[2]) {
       const dup = store.findWorkLogByClientId(body.clientId);
       if (dup) return reply(200, { log: dup, duplicate: true });
-      return reply(201, commitWork(body, user));
+      // Like Today's entries, every detailed entry lands on a work order.
+      return reply(201, commitWork({ ...body, alwaysJob: true }, user));
     }
 
     if ((method === 'PATCH' || method === 'DELETE') && seg[2]) {
@@ -2055,6 +2170,11 @@ async function handle({ method, seg, query, body = {}, user }) {
         const m = resolveMachineFromBody({ machineName: patch.machineName });
         patch.machineId = m ? m.id : null;
       }
+      // Job box / Plex WO# from the Edit screen.
+      if ('jobText' in patch || 'orderNumber' in patch) {
+        Object.assign(patch, applyJobEdit(log, patch, user));
+      }
+      delete patch.jobText; delete patch.orderNumber; delete patch.createdOrderIdInput;
       const hasParts = 'partsUsed' in patch || 'partsNeeded' in patch;
       const statusAfter = patch.statusAfter;
       const partsUsed = patch.partsUsed;

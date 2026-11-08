@@ -1,4 +1,4 @@
-/* Reports: the end-of-day list (to re-enter into the company system) and the
+/* Reports: the end-of-day list (to re-enter into Plex) and the
    handoff report for the supervisor / next shift (done, still open, parts). */
 
 import {
@@ -56,7 +56,7 @@ export async function renderReports(root) {
       techSel,
     ]),
     el('div', { class: 'tabs-row no-print' }, [
-      el('button', { class: 'tab' + (opts.tab === 'daily' ? ' on' : ''), onclick: () => { opts.tab = 'daily'; refresh(); } }, 'Work list (for company system)'),
+      el('button', { class: 'tab' + (opts.tab === 'daily' ? ' on' : ''), onclick: () => { opts.tab = 'daily'; refresh(); } }, 'Work list (for Plex)'),
       el('button', { class: 'tab' + (opts.tab === 'handoff' ? ' on' : ''), onclick: () => { opts.tab = 'handoff'; refresh(); } }, 'Handoff report (supervisor / next shift)'),
     ]),
     opts.tab === 'daily' ? dailyView(r, period, refresh) : handoffView(r, period, refresh),
@@ -86,7 +86,7 @@ function dailyView(r, period, refresh) {
     }
     rows.push(el('tr', { class: e.entered ? 'is-entered' : '' }, [
       el('td', { class: 'no-print' }, el('input', {
-        type: 'checkbox', checked: e.entered, 'aria-label': 'Entered in company system',
+        type: 'checkbox', checked: e.entered, 'aria-label': 'Entered in Plex',
         onchange: async (ev) => {
           try { await api(`/api/work-logs/${e.id}`, { method: 'PATCH', body: { entered: ev.target.checked } }); refresh(); }
           catch (err) { toast(err.message); }
@@ -115,7 +115,7 @@ function dailyView(r, period, refresh) {
     el('div', { class: 'kpis small-kpis' }, [
       kpi('Time logged', fmtHours(r.totals.minutes)),
       kpi('Entries', r.totals.entries),
-      kpi('Entered in company system', `${entered} / ${entries.length}`, entries.length && entered === entries.length ? 'good' : ''),
+      kpi('Entered in Plex', `${entered} / ${entries.length}`, entries.length && entered === entries.length ? 'good' : ''),
     ]),
     el('div', { class: 'card flush' }, entries.length ? el('div', { class: 'table-scroll' }, el('table', { class: 'data' }, [
       el('thead', {}, el('tr', {}, [el('th', { class: 'no-print' }, '✓'), el('th', {}, 'Time'), el('th', {}, 'Machine'), el('th', {}, 'Work done'), el('th', {}, 'Tech'), el('th', { class: 'num' }, 'Spent'), el('th', { class: 'no-print' }, '')])),

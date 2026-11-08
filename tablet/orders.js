@@ -136,7 +136,7 @@ export async function openWorkOrder(id, onChange = () => {}) {
     const f = {
       title: el('input', { value: w.title }),
       machine: el('input', { list: 'machine-list', value: machineName(w.machineId) }),
-      orderNumber: el('input', { value: w.orderNumber, placeholder: 'from the company system' }),
+      orderNumber: el('input', { value: w.orderNumber, placeholder: 'from Plex' }),
       priority: select(state.priorities, w.priority),
       status: select(state.statuses, w.status),
       assignedTo: select([['', '— unassigned —'], ...techs.map((t) => [t, t])], w.assignedTo),
@@ -204,7 +204,7 @@ export async function openWorkOrder(id, onChange = () => {}) {
       ]),
       el('div', { class: 'grid-form' }, [
         field('Title', f.title), field('Machine', f.machine),
-        field('Company WO#', f.orderNumber), field('Priority', f.priority),
+        field('Plex WO#', f.orderNumber), field('Priority', f.priority),
         field('Status', f.status), field('Assigned to', f.assignedTo),
         field('Due date', f.dueDate), el('span'),
       ]),
@@ -275,7 +275,7 @@ export function openNewOrder({ onDone, machineName: presetMachine = '' } = {}) {
     return el('div', {}, [
       el('div', { class: 'grid-form' }, [
         field('Title', f.title), field('Machine', f.machine),
-        field('Company WO#', f.orderNumber), field('Priority', f.priority),
+        field('Plex WO#', f.orderNumber), field('Priority', f.priority),
         field('Assign to', f.assignedTo), field('Due date', f.dueDate),
       ]),
       field('Description', f.description),
@@ -289,7 +289,7 @@ export function openEmailForm(onDone) {
     const subject = el('input');
     const body = el('textarea', { rows: 8 });
     return el('div', {}, [
-      el('p', { class: 'desc' }, 'Paste the subject and body of a work-order email from the company system. It pulls out the order number, machine and priority. Pasting the same order twice is harmless.'),
+      el('p', { class: 'desc' }, 'Paste the subject and body of a work-order email from Plex. It pulls out the order number, machine and priority. Pasting the same order twice is harmless.'),
       field('Subject', subject), field('Body', body),
       el('div', { class: 'row-end' }, [
         el('button', { class: 'ghost', onclick: close }, 'Cancel'),

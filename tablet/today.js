@@ -58,7 +58,7 @@ export async function renderToday(root) {
     el('div', { class: 'card' }, [
       el('h2', {}, [
         `${isToday ? 'Today’s' : fmtDay(viewDate)} work`,
-        el('span', { class: 'muted small' }, ` · ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'} · ${fmtHours(total)}${notEntered ? ` · ${notEntered} not entered yet` : ''}`),
+        el('span', { class: 'muted small' }, ` · ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'} · ${fmtHours(total)}${notEntered ? ` · ${notEntered} not in Plex yet` : ''}`),
         el('span', { class: 'spacer' }),
         entries.length ? el('button', { class: 'ghost', onclick: () => copyText(report.dailyText) }, 'Copy list') : null,
         el('a', { class: 'btn ghost', href: `#reports?preset=custom&from=${viewDate}&to=${viewDate}&tab=daily&technician=${encodeURIComponent(worker)}` }, 'End-of-day list →'),
@@ -293,7 +293,7 @@ function micIcon() {
 
 function entryCard(e, refresh) {
   const check = el('input', {
-    type: 'checkbox', checked: e.entered, 'aria-label': 'Entered in company system',
+    type: 'checkbox', checked: e.entered, 'aria-label': 'Entered in Plex',
     onchange: async (ev) => {
       try { await api(`/api/work-logs/${e.id}`, { method: 'PATCH', body: { entered: ev.target.checked } }); refresh(); }
       catch (err) { toast(err.message); ev.target.checked = !ev.target.checked; }
@@ -315,7 +315,7 @@ function entryCard(e, refresh) {
       ]),
     ]),
     el('div', { class: 'entry-actions' }, [
-      el('label', { class: 'entered', title: 'Tick once it’s in the company system' }, [check, ' Entered']),
+      el('label', { class: 'entered', title: 'Tick once it’s in Plex' }, [check, ' Entered in Plex']),
       el('button', { class: 'ghost', onclick: async () => {
         const log = (await api(`/api/work-logs?from=${e.date}&to=${e.date}`)).find((l) => l.id === e.id);
         if (log) openLogForm({ mode: 'edit', log, onDone: refresh });
